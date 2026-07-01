@@ -796,6 +796,7 @@ class Operation(BaseOperation):
         print("🚀 Начинаю рассылку откликов для резюме:", resume["title"])
         applied_count = 0
         limit_reached = False
+        tests_encountered = 0  # вакансии с тестом (для явного отчёта в конце)
 
         placeholders = {
             "first_name": user.get("first_name") or "",
@@ -1047,40 +1048,61 @@ class Operation(BaseOperation):
                 )
 
                 if vacancy.get("has_test"):
-                    logger.debug(
-                        "Решаем тест: %s",
-                        vacancy["alternate_url"],
-                    )
+                    tests_encountered += 1
+
+                    # Тесты решаются через браузерную ВЕБ-сессию (cookies), а не
+                    # через API-токен. Если она протухла — молчать нельзя, иначе
+                    # «Отправлено: 0» маскирует реальную проблему. Сообщаем СРАЗУ.
+                    if not self._web_session_ok():
+                        if tests_encountered == 1:
+                            print(
+                                "⚠️  Веб-сессия неактивна — вакансии с ТЕСТОМ пропускаю "
+                                "(для отклика нужно пройти тест, а это требует свежих "
+                                "cookies). Обнови веб-сессию: authorize"
+                            )
+                        logger.debug(
+                            "Пропуск вакансии с тестом (веб-сессия мертва): %s",
+                            vacancy["alternate_url"],
+                        )
+                        continue
+
+                    if self.dry_run:
+                        print(
+                            "🧪 [dry-run] вакансия с тестом — в реальном прогоне бот решает тест:",
+                            vacancy["alternate_url"],
+                        )
+                        continue
+
+                    logger.debug("Решаем тест: %s", vacancy["alternate_url"])
 
                     try:
-                        if not self.dry_run:
-                            result = self._solve_vacancy_test(
-                                vacancy_id=vacancy["id"],
-                                resume_hash=resume["id"],
-                                letter=letter,
+                        result = self._solve_vacancy_test(
+                            vacancy_id=vacancy["id"],
+                            resume_hash=resume["id"],
+                            letter=letter,
+                        )
+                        if result.get("success") == "true":
+                            applied_count += 1
+                            print(
+                                "📨 Отправили отклик на вакансию с тестом",
+                                vacancy["alternate_url"],
                             )
-                            if result.get("success") == "true":
-                                applied_count += 1
-                                print(
-                                    "📨 Отправили отклик на вакансию с тестом",
-                                    vacancy["alternate_url"],
-                                )
-                                self._human_delay()
-                            else:
-                                err = result.get("error")
+                            self._human_delay()
+                        else:
+                            err = result.get("error")
 
-                                if err == "negotiations-limit-exceeded":
-                                    do_apply = False
-                                    limit_reached = True
-                                    logger.warning(
-                                        "Достигли лимита на отклики (отправлено в этой сессии: %d)",
-                                        applied_count,
-                                    )
-                                    break
-                                else:
-                                    logger.error(
-                                        f"Произошла ошибка при отклике на вакансию с тестом: {vacancy['alternate_url']} - {err}"
-                                    )
+                            if err == "negotiations-limit-exceeded":
+                                do_apply = False
+                                limit_reached = True
+                                logger.warning(
+                                    "Достигли лимита на отклики (отправлено в этой сессии: %d)",
+                                    applied_count,
+                                )
+                                break
+                            else:
+                                logger.error(
+                                    f"Произошла ошибка при отклике на вакансию с тестом: {vacancy['alternate_url']} - {err}"
+                                )
                     except Exception as ex:
                         logger.error(f"Произошла непредвиденная ошибка: {ex}")
                         continue
@@ -1191,6 +1213,18 @@ class Operation(BaseOperation):
         print(
             f"✅️ Закончили рассылку для резюме: {resume['title']}. Отправлено: {applied_count}"
         )
+        if tests_encountered:
+            if not self._web_session_ok():
+                print(
+                    f"⚠️  Пропущено вакансий с тестом: {tests_encountered} — веб-сессия "
+                    "неактивна, пройти тесты нельзя. Обнови её: authorize "
+                    "(иначе часть свежих вакансий недоступна для отклика)."
+                )
+            elif self.dry_run:
+                print(
+                    f"🧪 Вакансий с тестом в выдаче: {tests_encountered} — в реальном "
+                    "прогоне бот попробует пройти тесты (успех не гарантирован)."
+                )
         return limit_reached
 
     def _send_email(self, to: str, subject: str, body: str) -> None:
@@ -1203,6 +1237,23 @@ class Operation(BaseOperation):
         self.tool.smtp.send_message(msg)
 
     json_decoder = JSONDecoder()
+
+    def _web_session_ok(self) -> bool:
+        """Жива ли браузерная веб-сессия (cookies) — нужна для тестов/капчи.
+        Результат кэшируется на прогон, чтобы не дёргать hh лишний раз."""
+        cached = getattr(self, "_web_session_alive", None)
+        if cached is not None:
+            return cached
+        try:
+            r = self.tool.session.get("https://hh.ru")
+            alive = bool(
+                re.search(r'^\s+login: "([^"]+)', r.text, re.MULTILINE)
+            )
+        except Exception as ex:
+            logger.debug("Не смог проверить веб-сессию: %s", ex)
+            alive = False
+        self._web_session_alive = alive
+        return alive
 
     def _get_vacancy_tests(self, response_url: str) -> VacancyTestsData:
         """Парсит тесты"""
