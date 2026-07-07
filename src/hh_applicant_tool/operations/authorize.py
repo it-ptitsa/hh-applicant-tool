@@ -33,7 +33,7 @@ class Operation(BaseOperation):
 
     # Селекторы
     SEL_LOGIN_INPUT = 'input[data-qa="login-input-username"]'
-    SEL_EXPAND_PASSWORD = 'button[data-qa="expand-login-by_password"]'
+    SEL_EXPAND_PASSWORD = 'button[data-qa="account-login-submit-by-password"]'
     SEL_PASSWORD_INPUT = 'input[data-qa="login-input-password"]'
     SEL_CODE_CONTAINER = 'div[data-qa="account-login-code-input"]'
     SEL_PIN_CODE_INPUT = 'input[data-qa="magritte-pincode-input-field"]'
@@ -155,17 +155,19 @@ class Operation(BaseOperation):
                 logger.debug(
                     f"Переход на страницу OAuth: {api_client.oauth_client.authorize_url}"
                 )
+                # wait_until="load" ждёт ВСЕ ресурсы (трекеры/аналитика hh) и
+                # регулярно таймаутил на 30с. Форма логина есть уже на
+                # domcontentloaded — его и ждём, а таймаут поднимаем до запаса.
                 await page.goto(
                     api_client.oauth_client.authorize_url,
-                    timeout=30000,
-                    wait_until="load",
+                    timeout=60000,
+                    wait_until="domcontentloaded",
                 )
 
                 if self.is_automated:
-                    await page.wait_for_selector(
-                        self.SEL_LOGIN_INPUT, timeout=self.selector_timeout
+                    await self._robust_fill(
+                        page, self.SEL_LOGIN_INPUT, username
                     )
-                    await page.fill(self.SEL_LOGIN_INPUT, username)
                     logger.debug("Логин введен")
 
                     password = args.password or storage.settings.get_value(
@@ -206,14 +208,30 @@ class Operation(BaseOperation):
                 logger.debug("Закрытие браузера")
                 await browser.close()
 
+    async def _robust_fill(self, page, selector: str, text: str) -> None:
+        """Надёжный ввод в React-инпуты hh. Обычный page.fill не всегда
+        регистрируется (поле остаётся пустым → «Обязательное поле»), а type
+        теряет первые символы до гидрации. Кликаем, чистим, печатаем,
+        проверяем значение, при неудаче повторяем."""
+        await page.wait_for_selector(
+            selector, timeout=self.selector_timeout or 15000
+        )
+        await page.click(selector)
+        await page.wait_for_timeout(400)
+        for _ in range(4):
+            await page.fill(selector, "")
+            await page.wait_for_timeout(120)
+            await page.type(selector, text, delay=45)
+            if (await page.input_value(selector)) == text:
+                return
+            await page.wait_for_timeout(250)
+        logger.warning("Не удалось надёжно ввести значение в %s", selector)
+
     async def _direct_login(self, page, password: str) -> None:
         logger.info("Вход по паролю...")
         await page.click(self.SEL_EXPAND_PASSWORD)
         await self._handle_captcha(page)
-        await page.wait_for_selector(
-            self.SEL_PASSWORD_INPUT, timeout=self.selector_timeout
-        )
-        await page.fill(self.SEL_PASSWORD_INPUT, password)
+        await self._robust_fill(page, self.SEL_PASSWORD_INPUT, password)
         await page.press(self.SEL_PASSWORD_INPUT, "Enter")
         logger.debug("Форма с паролем отправлена")
 
@@ -238,9 +256,11 @@ class Operation(BaseOperation):
 
     async def _handle_captcha(self, page):
         try:
+            # Детект капчи должен быть быстрым и конечным: в headless
+            # selector_timeout=None → без потолка ждали бы вечно, когда капчи нет.
             captcha_element = await page.wait_for_selector(
                 self.SEL_CAPTCHA_IMAGE,
-                timeout=self.selector_timeout,
+                timeout=self.selector_timeout or 5000,
                 state="visible",
             )
         except Exception:
