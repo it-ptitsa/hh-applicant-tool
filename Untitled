@@ -1,0 +1,2 @@
+cd /Users/it-ptitsa/Projects/hh-applicant-tool
+  .venv/bin/python -m hh_applicant_tool --profile-id inbox authorize 89957927846

@@ -99,6 +99,17 @@ class Operation(BaseOperation):
             type=str,
         )
         parser.add_argument(
+            "--reapply-rejected",
+            help="Не искать новые вакансии, а переоткликнуться указанным резюме (--resume-id) на вакансии, по которым РАНЕЕ ПРИШЁЛ ОТКАЗ другим резюме. Полезно, когда отказ был по грейду: senior-резюме отклоняют на middle-вакансии, а middle-версией можно зайти заново.",  # noqa: E501
+            action=argparse.BooleanOptionalAction,
+        )
+        parser.add_argument(
+            "--reapply-experience",
+            help="Фильтр по требуемому опыту для --reapply-rejected (id из hh: noExperience, between1And3, between3And6, moreThan6). Можно несколько.",  # noqa: E501
+            nargs="+",
+            default=None,
+        )
+        parser.add_argument(
             "-L",
             "--letter-file",
             "--letter",
@@ -361,6 +372,8 @@ class Operation(BaseOperation):
         self.schedule = args.schedule
         self.search = args.search
         self.search_field = args.search_field
+        self.reapply_rejected = args.reapply_rejected
+        self.reapply_experience = args.reapply_experience
         self.sort_point_lat = args.sort_point_lat
         self.sort_point_lng = args.sort_point_lng
         self.top_lat = args.top_lat
@@ -875,7 +888,10 @@ class Operation(BaseOperation):
                 vacancy_id = vacancy["id"]
                 relations = vacancy.get("relations", [])
 
-                if relations:
+                # В режиме переотклика got_rejection — это не повод пропустить,
+                # а наоборот причина зайти заново (другим резюме). Дубли уже
+                # отсеяны в _get_rejected_vacancies по resume_id.
+                if relations and not self.reapply_rejected:
                     logger.debug(
                         "Пропускаем вакансию с откликом: %s",
                         vacancy["alternate_url"],
@@ -1114,7 +1130,15 @@ class Operation(BaseOperation):
                         "message": letter,
                     }
                     try:
-                        if not self.dry_run:
+                        if self.dry_run:
+                            # Без этой строки dry-run молчит и «Отправлено: 0»
+                            # выглядит как «нечего слать» — хотя слать есть что.
+                            applied_count += 1
+                            print(
+                                "🧪 [dry-run] откликнулся бы на вакансию",
+                                vacancy["alternate_url"],
+                            )
+                        else:
                             res = self.api_client.post(
                                 "/negotiations",
                                 params,
@@ -1215,8 +1239,9 @@ class Operation(BaseOperation):
             resume["title"],
             applied_count,
         )
+        prefix = "🧪 [dry-run] отправилось бы" if self.dry_run else "Отправлено"
         print(
-            f"✅️ Закончили рассылку для резюме: {resume['title']}. Отправлено: {applied_count}"
+            f"✅️ Закончили рассылку для резюме: {resume['title']}. {prefix}: {applied_count}"
         )
         if tests_encountered:
             if not self._web_session_ok():
@@ -1544,9 +1569,74 @@ class Operation(BaseOperation):
 
         return params
 
+    def _get_rejected_vacancies(
+        self, resume_id: str | None = None
+    ) -> Iterator[SearchVacancy]:
+        """Вакансии, по которым РАНЕЕ пришёл отказ (negotiations state=discard).
+        Нужны для переотклика другим резюме (например, отказ по грейду:
+        senior-резюме не проходит на middle-вакансию, а middle-версия проходит).
+        Вакансии, где уже есть отклик ЭТИМ резюме, пропускаем — чтобы не слать
+        дубли."""
+        rejected: list[str] = []
+        already_applied: set[str] = set()
+
+        page = 0
+        while True:
+            res = self.api_client.get(
+                "/negotiations", {"page": page, "per_page": 100}
+            )
+            for item in res.get("items", []):
+                vacancy_id = (item.get("vacancy") or {}).get("id")
+                if not vacancy_id:
+                    continue
+                if (item.get("resume") or {}).get("id") == resume_id:
+                    already_applied.add(vacancy_id)
+                if (item.get("state") or {}).get("id") == "discard":
+                    rejected.append(vacancy_id)
+            if page >= res.get("pages", 1) - 1:
+                break
+            page += 1
+
+        todo = [v for v in dict.fromkeys(rejected) if v not in already_applied]
+        logger.info(
+            "Отказных вакансий: %d, из них не охвачено этим резюме: %d",
+            len(set(rejected)),
+            len(todo),
+        )
+        print(
+            f"♻️  Переотклик: отказных вакансий {len(set(rejected))}, "
+            f"кандидатов на переотклик {len(todo)}"
+        )
+
+        for vacancy_id in todo:
+            try:
+                vacancy = self.api_client.get(f"/vacancies/{vacancy_id}")
+            except ApiError as ex:
+                logger.warning("Не смог получить вакансию %s: %s", vacancy_id, ex)
+                continue
+
+            if vacancy.get("archived"):
+                continue
+
+            if self.reapply_experience:
+                experience = (vacancy.get("experience") or {}).get("id")
+                if experience not in self.reapply_experience:
+                    logger.debug(
+                        "Пропускаю %s — опыт %s не подходит под фильтр",
+                        vacancy["alternate_url"],
+                        experience,
+                    )
+                    continue
+
+            yield vacancy
+
     def _get_vacancies(
         self, resume_id: str | None = None
     ) -> Iterator[SearchVacancy]:
+        if self.reapply_rejected:
+            yield from self._get_rejected_vacancies(resume_id)
+            return
+
         for page in range(self.total_pages):
             logger.debug(f"Загружаем вакансии со страницы: {page + 1}")
             params = self._get_search_params(page)
