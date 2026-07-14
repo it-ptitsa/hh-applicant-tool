@@ -31,7 +31,14 @@ class Operation(BaseOperation):
     def run(self, tool: HHApplicantTool, args: BaseNamespace) -> None:
         r = tool.session.get("https://hh.ru")
 
-        if m := re.search(r'^\s+login: "([^"]+)', r.text, re.MULTILINE):
+        # hh менял формат: раньше `login: "email"` с новой строки,
+        # теперь `"login": "email"` внутри JSON-конфига страницы.
+        # Паттерн покрывает оба варианта; `login-url` и прочие
+        # HTML-экранированные ключи не матчатся (нет кавычки/двоеточия сразу
+        # после слова login).
+        if m := re.search(
+            r'\blogin"?\s*:\s*"([^"]+)"', r.text, re.MULTILINE
+        ):
             print("✅ Браузерная (веб) сессия активна, вы вошли как", m.group(1))
         else:
             logger.warning(

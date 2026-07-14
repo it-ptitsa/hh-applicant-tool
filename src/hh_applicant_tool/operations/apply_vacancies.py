@@ -1203,6 +1203,11 @@ class Operation(BaseOperation):
                 logger.warning(ex)
             except (BadResponse, AIError) as ex:
                 logger.error(ex)
+            except requests.RequestException as ex:
+                # Сеть легла даже после ретраев клиента — пропускаем вакансию,
+                # но НЕ роняем весь прогон (иначе одна ошибка = 0 откликов
+                # за день, как 13.07).
+                logger.error("Сетевая ошибка, пропускаю вакансию: %s", ex)
 
         logger.info(
             "Закончили рассылку откликов для резюме: %s (%s). Отправлено: %d",
@@ -1246,8 +1251,11 @@ class Operation(BaseOperation):
             return cached
         try:
             r = self.tool.session.get("https://hh.ru")
+            # hh менял формат: раньше `login: "email"` с новой строки,
+            # теперь `"login": "email"` в JSON-конфиге страницы.
+            # Паттерн покрывает оба варианта.
             alive = bool(
-                re.search(r'^\s+login: "([^"]+)', r.text, re.MULTILINE)
+                re.search(r'\blogin"?\s*:\s*"([^"]+)"', r.text, re.MULTILINE)
             )
         except Exception as ex:
             logger.debug("Не смог проверить веб-сессию: %s", ex)

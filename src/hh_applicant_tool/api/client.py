@@ -96,13 +96,37 @@ class BaseClient:
                 ["data", "json"][as_json] if has_body else "params": params
             }
             # logger.debug(f"request info: {method = }, {url = }, {headers = }, params = {repr(params)[:255]}")
-            response = self.session.request(
-                method,
-                url,
-                **payload,
-                headers=self._default_headers(),
-                allow_redirects=False,
-            )
+            # hh изредка рвёт соединение (RemoteDisconnected/таймаут) — без
+            # retry один такой обрыв убивал ВЕСЬ дневной прогон рассылки
+            # (наблюдалось 13.07: 8 откликов и смерть). POST-отклик безопасно
+            # повторять: при дубле hh вернёт ошибку "already applied", а не
+            # второй отклик.
+            for attempt in range(3):
+                try:
+                    response = self.session.request(
+                        method,
+                        url,
+                        **payload,
+                        headers=self._default_headers(),
+                        allow_redirects=False,
+                        timeout=60,
+                    )
+                    break
+                except (
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                    requests.exceptions.ChunkedEncodingError,
+                ) as ex:
+                    if attempt == 2:
+                        raise
+                    wait = 10 * (attempt + 1)
+                    logger.warning(
+                        "Сетевой сбой (%s) — повтор через %d с (попытка %d/3)",
+                        ex,
+                        wait,
+                        attempt + 1,
+                    )
+                    time.sleep(wait)
             try:
                 # У этих лошков сервер не отдает Content-Length, а кривое API
                 # отдает пустые ответы, например, при отклике на вакансии,
