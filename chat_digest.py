@@ -187,7 +187,15 @@ def collect(api: Api, hours: int) -> list[dict]:
                     "employer": employer.get("name") or "—",
                     "vacancy": vacancy.get("name") or "—",
                     "url": vacancy.get("alternate_url") or item.get("url") or "",
-                    "chat_url": f"https://hh.ru/negotiations/item/{item['id']}",
+                    # Рабочая ссылка на чат — /chat/{chat_id}. chat_id ≠ id
+                    # переговоров (у StudyWorld id=5416332750, chat_id=5461495889).
+                    # Если chat_id вдруг нет — открываем список откликов, а не
+                    # ведём на битый /negotiations/item/.
+                    "chat_url": (
+                        f"https://hh.ru/chat/{item['chat_id']}"
+                        if item.get("chat_id")
+                        else "https://hh.ru/applicant/negotiations"
+                    ),
                     "text": (last.get("text") or "").strip(),
                     "at": datetime.fromisoformat(last["created_at"]).strftime("%d.%m %H:%M"),
                     "answered": answered,
