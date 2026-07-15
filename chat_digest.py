@@ -38,12 +38,31 @@ RULES: list[tuple[str, str, re.Pattern]] = [
         re.compile(r"\bоффер|предложение о работе|готовы предложить", re.I),
     ),
     (
+        "contact",
+        "✍️ Зовут в личку (Telegram/телефон/почта)",
+        re.compile(
+            # Работодатель уводит контакт из hh во внешний канал. Пропустить
+            # это — потерять живой контакт: именно так вышло со StudyWorld.
+            r"@[\w.]{3,}|"  # @username
+            r"\bt\.me/|"
+            r"телеграм|телеграмм|telegram|"
+            r"напишите (?:мне|нам)?\s*(?:в|на)|"
+            r"позвоните|перезвоните|наберите|звоните|"
+            r"свяжитесь со мной|"
+            r"мой (?:телефон|номер)|"
+            r"\+7[\s\-(]?\d{3}|"  # телефон +7 ...
+            r"\bwhats\s?app|\bватсап|\bwa\.me",
+            re.I,
+        ),
+    ),
+    (
         "interview",
         "📞 Зовут на собес / созвон",
         re.compile(
             r"собеседовани|интервью|созвон|видеозвон|созвониться|"
             r"когда вам удобно|удобно ли вам|назначим|пригласить вас|"
-            r"готовы пообщаться|позна?комиться",
+            r"готовы пообщаться|позна?комиться|обсудить детали|"
+            r"хотели бы (?:с вами )?связаться|обсудить (?:вакансию|позицию)",
             re.I,
         ),
     ),
@@ -125,12 +144,20 @@ def collect(api: Api, hours: int) -> list[dict]:
                 continue
 
             # Классифицируем по всем свежим репликам работодателя: важное могло
-            # прийти не последним сообщением.
+            # прийти не последним сообщением. Берём совпадение с наивысшим
+            # приоритетом (порядок RULES).
+            priority = {code: i for i, (code, *_r) in enumerate(RULES)}
             hit = None
             for m in fresh:
-                hit = classify(m.get("text") or "")
-                if hit and hit[0] in ("offer", "interview", "test_task"):
-                    break
+                cand = classify(m.get("text") or "")
+                if cand and (hit is None or priority[cand[0]] < priority[hit[0]]):
+                    hit = cand
+
+            state_id = (item.get("state") or {}).get("id")
+            # Приглашение (state=interview) — всегда важно, даже если текст не
+            # совпал ни с одним правилом (бывает приглашение без слов-триггеров).
+            if hit is None and state_id == "interview":
+                hit = ("interview", "📞 Приглашение / собеседование")
             if not hit:
                 continue
 
@@ -147,6 +174,11 @@ def collect(api: Api, hours: int) -> list[dict]:
                 and datetime.fromisoformat(my_last[-1]["created_at"])
                 > datetime.fromisoformat(last["created_at"])
             )
+            # «Зовут в личку» — действие ВСЕГДА на тебе (написать в TG/позвонить),
+            # даже если бот ответил в hh-чате «напишу». Иначе StudyWorld-кейс:
+            # бот пообещал за тебя, а ты не в курсе.
+            if hit[0] == "contact":
+                answered = False
 
             interesting.append(
                 {
@@ -167,7 +199,7 @@ def collect(api: Api, hours: int) -> list[dict]:
             break
         page += 1
 
-    order = {"offer": 0, "interview": 1, "test_task": 2, "question": 3}
+    order = {"offer": 0, "contact": 1, "interview": 2, "test_task": 3, "question": 4}
     interesting.sort(key=lambda x: order.get(x["code"], 9))
     return interesting
 
