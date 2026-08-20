@@ -152,8 +152,22 @@ class Operation(BaseOperation):
         self._resume_ctx_cache[rid] = ctx
         return ctx
 
+    def _load_manual_skip(self) -> set[str]:
+        """Вакансии из ручного глобального ЧС (skipped_vacancies с resume_id='')
+        — их чаты бот НЕ трогает: по ним пользователь ведёт переписку сам.
+        Добавить вакансию: INSERT в skipped_vacancies с resume_id=''."""
+        try:
+            return {
+                str(m.vacancy_id)
+                for m in self.tool.storage.skipped_vacancies.find(resume_id="")
+            }
+        except Exception as ex:
+            logger.warning("Не смог загрузить ручной ЧС вакансий: %s", ex)
+            return set()
+
     def reply_employers(self):
         blacklist = set(self.tool.get_blacklisted())
+        manual_skip = self._load_manual_skip()
         me: datatypes.User = self.tool.get_me()
         resumes = self.tool.get_resumes()
         resumes = (
@@ -166,13 +180,19 @@ class Operation(BaseOperation):
                 lambda resume: resume["status"]["id"] == "published", resumes
             )
         )
-        self._reply_chats(user=me, resumes=resumes, blacklist=blacklist)
+        self._reply_chats(
+            user=me,
+            resumes=resumes,
+            blacklist=blacklist,
+            manual_skip=manual_skip,
+        )
 
     def _reply_chats(
         self,
         user: datatypes.User,
         resumes: list[datatypes.Resume],
         blacklist: set[str],
+        manual_skip: set[str],
     ) -> None:
         resume_map = {r["id"]: r for r in resumes}
 
@@ -214,6 +234,14 @@ class Operation(BaseOperation):
                 vacancy = negotiation["vacancy"]
                 employer = vacancy.get("employer") or {}
                 salary = vacancy.get("salary") or {}
+
+                # Ручной ЧС по ВАКАНСИИ: чат ведёт сам пользователь — бот молчит.
+                if str(vacancy.get("id")) in manual_skip:
+                    print(
+                        "🙅 Пропускаю чат — вакансия в ручном ЧС (ведёшь сам):",
+                        vacancy.get("alternate_url"),
+                    )
+                    continue
 
                 if employer.get("id") in blacklist:
                     print(
