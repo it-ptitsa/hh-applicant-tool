@@ -147,11 +147,12 @@ class Operation(BaseOperation):
 
                 page.on("request", handle_request)
 
-                logger.debug(
-                    f"Переход на страницу OAuth: {api_client.oauth_client.authorize_url}"
+                authorize_url = (
+                    api_client.oauth_client.authorize_url + "&role=applicant"
                 )
+                logger.debug(f"Переход на страницу OAuth: {authorize_url}")
                 await page.goto(
-                    api_client.oauth_client.authorize_url,
+                    authorize_url,
                     timeout=60000,
                     wait_until="load",
                 )
