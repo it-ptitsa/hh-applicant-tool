@@ -1,5 +1,6 @@
 name: Publish to PyPI
 on:
+  # Позволяет запускать flow вручную
   workflow_dispatch:
 
   push:
@@ -11,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - name: Build and publish to pypi
+        # С более ранними версиями больше не работает
         uses: JRubics/poetry-publish@v2.1
         with:
           pypi_token: ${{ secrets.PYPI_TOKEN }}
