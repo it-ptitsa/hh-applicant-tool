@@ -61,8 +61,10 @@ def parse_scalar(value: str) -> bool | int | float | str | None:
     match value.lower():
         case "null":
             return None
-        case "true" | "false":
-            return value.lower() == "true"
+        case "true":
+            return True
+        case "false":
+            return False
     try:
         return float(value) if "." in value else int(value)
     except ValueError:
