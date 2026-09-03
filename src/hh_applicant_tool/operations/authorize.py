@@ -148,7 +148,7 @@ class Operation(BaseOperation):
                 page.on("request", handle_request)
 
                 authorize_url = (
-                    api_client.oauth_client.authorize_url + "&role=applicant"
+                    api_client.oauth_client.authorize_url  # + "&role=applicant"
                 )
                 logger.debug(f"Переход на страницу OAuth: {authorize_url}")
                 await page.goto(
