@@ -93,6 +93,32 @@ def load_token() -> str:
     return token
 
 
+def web_session_alive() -> bool:
+    """Жива ли браузерная веб-сессия (cookies) — она нужна для прохождения
+    тестов/капчи, живёт ~2 недели и НЕ обновляется сама. Проверяем тем же
+    способом, что и `test-session`: грузим hh.ru с куками и ищем логин в
+    JSON-конфиге страницы. Нужно, чтобы предупреждать о протухании ЗАРАНЕЕ,
+    а не когда отклики уже посыпались с «tests not found»."""
+    from http.cookiejar import MozillaCookieJar
+
+    cookies_file = CONFIG_DIR / "cookies.txt"
+    if not cookies_file.exists():
+        return False
+    try:
+        jar = MozillaCookieJar(str(cookies_file))
+        jar.load(ignore_discard=True, ignore_expires=True)
+        s = requests.Session()
+        s.cookies = jar
+        s.headers["User-Agent"] = (
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 "
+            "Chrome/126 Mobile Safari/537.36"
+        )
+        r = s.get("https://hh.ru", timeout=30)
+        return bool(re.search(r'\blogin"?\s*:\s*"([^"]+)"', r.text))
+    except Exception:
+        return False
+
+
 class Api:
     def __init__(self, token: str) -> None:
         self.s = requests.Session()
@@ -270,6 +296,17 @@ def main() -> None:
     api = Api(load_token())
     items = collect(api, args.hours)
     message = build_message(items, args.hours)
+
+    # Проверка веб-сессии — предупредить о протухании ЗАРАНЕЕ (раз в ~2 недели
+    # куки умирают → вакансии с тестом перестают откликаться). Дайджест и так
+    # шлётся в ТГ дважды в день, так что это бесплатный ранний сигнал.
+    if not web_session_alive():
+        message = (
+            "⚠️ <b>ВЕБ-СЕССИЯ ПРОТУХЛА</b> — вакансии с тестом сейчас "
+            "пропускаются («tests not found»). Нужно переавторизоваться: "
+            "локально <code>authorize --profile-id acc4</code> → скопировать "
+            "cookies на сервер.\n\n" + message
+        )
 
     if args.print:
         print(message)
