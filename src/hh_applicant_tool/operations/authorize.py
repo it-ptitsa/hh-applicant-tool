@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import re
 import typing
 from datetime import datetime
 from http.cookiejar import Cookie
@@ -11,8 +12,11 @@ from urllib.parse import parse_qs, urlsplit
 
 try:
     from playwright.async_api import async_playwright
-except ImportError:
+except ImportError as exc:
     async_playwright = None
+    _PLAYWRIGHT_IMPORT_ERROR = exc
+else:
+    _PLAYWRIGHT_IMPORT_ERROR = None
 
 from ..main import BaseOperation
 from ..utils.terminal import print_kitty_image, print_sixel_mage
@@ -31,10 +35,22 @@ class Operation(BaseOperation):
 
     __aliases__: list = ["authenticate", "auth", "login"]
 
-    # Селекторы
+    # Селекторы. Старые data-qa оставлены как fallback: hh.ru в 2026
+    # перешёл на magritte-форму (телефон/почта раздельно).
+    SEL_LOGIN_FORM = '[data-qa="account-login-form"]'
     SEL_LOGIN_INPUT = 'input[data-qa="login-input-username"]'
-    SEL_EXPAND_PASSWORD = 'button[data-qa="account-login-submit-by-password"]'
-    SEL_PASSWORD_INPUT = 'input[data-qa="login-input-password"]'
+    SEL_PHONE_INPUT = (
+        'input[data-qa="magritte-phone-input-national-number-input"]'
+    )
+    SEL_EMAIL_TAB = '[data-qa="credential-type-email"]'
+    SEL_EMAIL_INPUT = 'input[data-qa="applicant-login-input-email"]'
+    SEL_EXPAND_PASSWORD = (
+        '[data-qa="expand-login-by-password"], '
+        'button[data-qa="account-login-submit-by-password"]'
+    )
+    SEL_PASSWORD_INPUT = (
+        'input[data-qa="login-input-password"], input[type="password"]'
+    )
     SEL_CODE_CONTAINER = 'div[data-qa="account-login-code-input"]'
     SEL_PIN_CODE_INPUT = 'input[data-qa="magritte-pincode-input-field"]'
     SEL_CAPTCHA_IMAGE = 'img[data-qa="account-captcha-picture"]'
@@ -97,7 +113,15 @@ class Operation(BaseOperation):
     async def _run(self) -> None:
         if async_playwright is None:
             raise RuntimeError(
-                "Не установлен Playwright. Установите зависимости: pip install playwright && playwright install chromium"
+                "Не удалось импортировать Playwright"
+                + (
+                    f": {_PLAYWRIGHT_IMPORT_ERROR}"
+                    if _PLAYWRIGHT_IMPORT_ERROR
+                    else ""
+                )
+                + ".\nУстановите extra `playwright` и Chromium "
+                "(`pip install 'hh-applicant-tool[playwright]'` и "
+                "`hh-applicant-tool install`)."
             )
 
         args = self._args
@@ -152,8 +176,8 @@ class Operation(BaseOperation):
 
                 page.on("request", handle_request)
 
-                logger.debug(
-                    f"Переход на страницу OAuth: {api_client.oauth_client.authorize_url}"
+                authorize_url = (
+                    api_client.oauth_client.authorize_url  # + "&role=applicant"
                 )
                 # wait_until="load" ждёт ВСЕ ресурсы (трекеры/аналитика hh) и
                 # регулярно таймаутил на 30с. Форма логина есть уже на
@@ -177,6 +201,12 @@ class Operation(BaseOperation):
                         await self._direct_login(page, password)
                     else:
                         await self._onetime_code_login(page)
+                else:
+                    print(
+                        "Откройте окно Chromium и войдите на hh.ru вручную.\n"
+                        "После успешного входа утилита перехватит OAuth-код "
+                        "и закроет браузер."
+                    )
 
                 logger.debug("Ожидание OAuth-кода...")
                 auth_code = await asyncio.wait_for(
@@ -229,7 +259,7 @@ class Operation(BaseOperation):
 
     async def _direct_login(self, page, password: str) -> None:
         logger.info("Вход по паролю...")
-        await page.click(self.SEL_EXPAND_PASSWORD)
+        await page.locator(self.SEL_EXPAND_PASSWORD).first.click(force=True)
         await self._handle_captcha(page)
         await self._robust_fill(page, self.SEL_PASSWORD_INPUT, password)
         await page.press(self.SEL_PASSWORD_INPUT, "Enter")
@@ -237,7 +267,10 @@ class Operation(BaseOperation):
 
     async def _onetime_code_login(self, page) -> None:
         logger.info("Вход по одноразовому коду...")
-        await page.press(self.SEL_LOGIN_INPUT, "Enter")
+        login_field = page.locator(
+            f"{self.SEL_EMAIL_INPUT}, {self.SEL_PHONE_INPUT}, {self.SEL_LOGIN_INPUT}"
+        ).first
+        await login_field.press("Enter")
         await self._handle_captcha(page)
         await page.wait_for_selector(
             self.SEL_CODE_CONTAINER, timeout=self.selector_timeout

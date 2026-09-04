@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import html
+import json
 import logging
 import os
+import re
+import signal
 import smtplib
 import sqlite3
 import sys
+import threading
 from collections.abc import Sequence
+from contextlib import contextmanager
 from functools import cached_property
 from http.cookiejar import MozillaCookieJar
 from importlib import import_module
@@ -25,6 +31,8 @@ from .constants import (
     CONFIG_FILENAME,
     COOKIES_FILENAME,
     DATABASE_FILENAME,
+    DEFAULT_OPENAI_CONNECT_TIMEOUT,
+    DEFAULT_OPENAI_TIMEOUT,
     DESKTOP_USER_AGENT,
     LOG_FILENAME,
 )
@@ -36,6 +44,10 @@ from .utils.mixins import MegaTool
 logger = logging.getLogger(__package__)
 
 OPERATIONS = "operations"
+
+
+class Error(Exception):
+    pass
 
 
 class BaseOperation:
@@ -57,6 +69,8 @@ class BaseNamespace(argparse.Namespace):
     user_agent: str
     proxy_url: str
     openai_proxy_url: str
+    openai_timeout: float
+    openai_connect_timeout: float
     operation_run: Callable[[HHApplicantTool, BaseNamespace], None | int] | None
 
 
@@ -121,6 +135,18 @@ class HHApplicantTool(MegaTool):
             dest="openai_proxy_url",
             help="Отдельный прокси, используемый только для OpenAI чата",
         )
+        parser.add_argument(
+            "--openai-timeout",
+            "--ai-timeout",
+            type=float,
+            help="Таймаут запроса к OpenAI в секундах: соединение и чтение ответа",
+        )
+        parser.add_argument(
+            "--openai-connect-timeout",
+            "--ai-connect-timeout",
+            type=float,
+            help="Таймаут соединения с OpenAI в секундах",
+        )
         subparsers = parser.add_subparsers(help="commands")
         package_dir = Path(__file__).resolve().parent / OPERATIONS
         for _, module_name, _ in iter_modules([str(package_dir)]):
@@ -184,7 +210,6 @@ class HHApplicantTool(MegaTool):
         log_label: str,
     ) -> requests.Session:
         session = requests.Session()
-        session.verify = False
 
         if proxies:
             logger.info("Use proxies for %s: %r", log_label, proxies)
@@ -301,6 +326,43 @@ class HHApplicantTool(MegaTool):
 
             if page + 1 >= r.get("pages", 0):
                 break
+                
+    def _is_authenticated(self, config: dict[str, Any]) -> bool:
+        account = config.get('account') or {}
+        if not account:
+            return False
+        # Если пользователь неавторизован содержит поля типа firstName, lastName и тд со значением None (все поля)
+        return any(v is not None for v in account.values())
+    
+    def parse_redirect_config(self, response: requests.Response, check_auth: bool = True) -> dict[str, Any]:
+        if response.status_code != 200:
+            raise Error(f"Неожиданный код ответа: {response.status_code} {response.url}")
+
+        try:
+            raw_config = response.text.split('id="HH-Lux-InitialState">')[1].split('</template>')[0]
+        except IndexError:
+            raise Error(f"Template with config not found on {response.url}")
+        
+        # Теперь кавычки всегда превращаются в сущности?
+        if raw_config.startswith('{&#34;'):
+           raw_config = html.unescape(raw_config)
+            
+        # import tempfile
+        # with tempfile.NamedTemporaryFile('w', delete=False, prefix='hh_config_', suffix='.json', dir='.', encoding='utf-8') as tmp_file:
+        #     tmp_file.write(raw_config)
+        #     file_path = tmp_file.name
+        #     print(file_path)
+        
+        config = json.loads(raw_config)
+        assert type(config) is dict
+        assert "redirectConfig" in config
+        if check_auth and not self._is_authenticated(config):
+            raise Error("Авторизация истекла требуется новая!")
+            
+        return config
+
+    def get_redirect_config(self, url: str, check_auth: bool = True) -> dict[str, Any]:
+        return self.parse_redirect_config(self.session.get(url), check_auth)
 
     # TODO: добавить еще методов или те удалить?
 
@@ -372,6 +434,8 @@ class HHApplicantTool(MegaTool):
                 config_section,
             )
     
+        openai_config = self.config.get("openai", {})
+
         return ai.ChatOpenAI(
             api_key=api_key,
             model=model,
@@ -380,23 +444,55 @@ class HHApplicantTool(MegaTool):
             system_prompt=system_prompt,
             base_url=base_url,
             rate_limit=c.get("rate_limit", 40),
+            timeout=(
+                self.openai_timeout
+                or c.get("timeout")
+                or openai_config.get("timeout")
+                or DEFAULT_OPENAI_TIMEOUT
+            ),
+            connect_timeout=(
+                self.openai_connect_timeout
+                or c.get("connect_timeout")
+                or openai_config.get("connect_timeout")
+                or DEFAULT_OPENAI_CONNECT_TIMEOUT
+            ),
             session=self.openai_session,
         )
 
     # TODO: вынести в миксин какой
+    def _cookie_value(self, name: str) -> str | None:
+        """Значение cookie по имени из jar на базе {CookieJar} (нет get_dict)."""
+        return next(
+            (c.value for c in self.session.cookies if c.name == name),
+            None,
+        )
+
     def _extract_xsrf_token(self, content: str) -> str:
-        xsrf_token_marker = ',"xsrfToken":"'
-        s1 = content.find(xsrf_token_marker)
-        if s1 == -1:
+        # hh.ru отдает этот блок с HTML-заэкранированными кавычками
+        # (внутри HTML-атрибута), поэтому сначала разэкранируем всю страницу
+        content = html.unescape(content)
+        tokens = re.findall(r',"xsrfToken":"([^"]+)"', content)
+        if not tokens:
             raise ValueError("xsrf token not found")
-        s1 += len(xsrf_token_marker)
-        s2 = content.find('"', s1)
-        if s2 == -1:
-            raise ValueError("malformed xsrf token")
-        return content[s1:s2]
+
+        # На странице hh.ru может быть несколько xsrfToken. Первый из них —
+        # случайное значение, которое ротируется при каждой загрузке и НЕ
+        # соответствует cookie `_xsrf`, из-за чего POST на
+        # /applicant/vacancy_response/popup возвращал 403 (CSRF mismatch).
+        # Сервер сверяет токен именно с cookie `_xsrf`, поэтому отдаем
+        # совпадающее значение, а не первое вхождение.
+        cookie_xsrf = self._cookie_value("_xsrf")
+        if cookie_xsrf and cookie_xsrf in tokens:
+            return cookie_xsrf
+        return tokens[0]
 
     def _get_xsrf_token(self, url: str | None = None) -> str:
-        """Возвращает XSRF-токен, который выдается на сессию"""
+        """Возвращает XSRF-токен, который выдается на сессию."""
+        # Токен, который сервер реально валидирует, лежит в cookie `_xsrf`.
+        # Если cookie уже есть — используем его и не делаем лишний GET.
+        cookie_xsrf = self._cookie_value("_xsrf")
+        if cookie_xsrf:
+            return cookie_xsrf
         r = self.session.get(url or "https://hh.ru/")
         return self._extract_xsrf_token(r.text)
 
@@ -454,51 +550,100 @@ class HHApplicantTool(MegaTool):
         utils.setup_terminal()
 
         try:
-            if self.operation_run:
-                try:
-                    return self.operation_run(self, args)
-                except KeyboardInterrupt:
-                    logger.warning("Выполнение прервано пользователем!")
-                except api.errors.CaptchaRequired as ex:
-                    logger.error(f"Требуется ввод капчи: {ex.captcha_url}")
-                except api.errors.InternalServerError:
-                    logger.error(
-                        "Сервер HH.RU не смог обработать запрос из-за высокой"
-                        " нагрузки или по иной причине"
-                    )
-                except api.errors.Forbidden:
-                    logger.error("Требуется авторизация")
-                except ValueError as ex:
-                    logger.error(ex)
-                except sqlite3.Error as ex:
-                    logger.exception(ex)
-
-                    script_name = sys.argv[0].split(os.sep)[-1]
-
-                    logger.warning(
-                        f"Возможно база данных повреждена, попробуйте выполнить команду:\n\n"  # noqa: E501
-                        f"  {script_name} migrate-db"
-                    )
-                except Exception as e:
-                    logger.exception(e)
-                finally:
-                    # Токен мог автоматически обновиться
-                    if self.save_token():
-                        logger.info("Токен был сохранен после обновления.")
-
-                    try:
-                        self.save_cookies()
-                    except Exception as ex:
-                        logger.error(f"Не удалось сохранить cookies: {ex}")
-                return 1
-            self._parser.print_help(file=sys.stderr)
-            return 2
+            with self._graceful_sigint(args):
+                if not self.operation_run:
+                    self._parser.print_help(file=sys.stderr)
+                    return 2
+                return self._run_operation(args)
         finally:
+            self._check_system_safe()
+
+    @contextmanager
+    def _graceful_sigint(self, args: BaseNamespace):
+        """Мягкое прерывание по Ctrl+C (SIGINT).
+
+        Первое нажатие останавливает операцию между шагами (через
+        `_cancel_event`), второе — принудительно завершает процесс с кодом 130.
+        Ручной обработчик нужен, чтобы KeyboardInterrupt не превращался в дамп
+        стека внутри сетевого вызова проверки версии в `finally` (там ловится
+        только `Exception`).
+        """
+        cancel_event = threading.Event()
+        op_instance = (
+            getattr(self.operation_run, "__self__", None)
+            if self.operation_run
+            else None
+        )
+        if op_instance is not None:
+            op_instance._cancel_event = cancel_event
+        args._cancel_event = cancel_event
+
+        sigint_count = [0]
+
+        def _handle_sigint(signum, frame):
+            sigint_count[0] += 1
+            if sigint_count[0] == 1:
+                cancel_event.set()
+                logger.warning(
+                    "Выполнение прервано пользователем! Приступаю к Завершению работы. "
+                    "Нажмите ещё раз для принудительного выхода."
+                )
+            else:
+                sys.exit(130)
+
+        previous_handler = signal.signal(signal.SIGINT, _handle_sigint)
+        try:
+            yield
+        finally:
+            signal.signal(signal.SIGINT, previous_handler)
+
+    def _run_operation(self, args: BaseNamespace) -> None | int:
+        """Запускает выбранную операцию и превращает исключения в сообщения."""
+        try:
+            return self.operation_run(self, args)
+        except KeyboardInterrupt:
+            logger.warning("Выполнение прервано пользователем!")
+        except api.errors.CaptchaRequired as ex:
+            logger.error(f"Требуется ввод капчи: {ex.captcha_url}")
+        except api.errors.InternalServerError:
+            logger.error(
+                "Сервер HH.RU не смог обработать запрос из-за высокой"
+                " нагрузки или по иной причине"
+            )
+        except api.errors.Forbidden:
+            logger.error("Требуется авторизация")
+        except (Error, ValueError) as ex:
+            logger.error(ex)
+        except sqlite3.Error as ex:
+            logger.exception(ex)
+
+            script_name = sys.argv[0].split(os.sep)[-1]
+
+            logger.warning(
+                f"Возможно база данных повреждена, попробуйте выполнить команду:\n\n"  # noqa: E501
+                f"  {script_name} migrate-db"
+            )
+        except Exception as e:
+            logger.exception(e)
+        finally:
+            # Токен мог автоматически обновиться
+            if self.save_token():
+                logger.info("Токен был сохранен после обновления.")
+
             try:
-                self._check_system()
-            except Exception:
-                pass
-                # raise
+                self.save_cookies()
+            except Exception as ex:
+                logger.error(f"Не удалось сохранить cookies: {ex}")
+        return 1
+
+    def _check_system_safe(self) -> None:
+        """Проверка обновлений, никогда не ломающая выход из программы."""
+        try:
+            self._check_system()
+        except KeyboardInterrupt:
+            logger.warning("Выполнение прервано пользователем!")
+        except Exception:
+            pass
 
     def _assign_args(self, args: BaseNamespace) -> None:
         for name, value in vars(args).items():

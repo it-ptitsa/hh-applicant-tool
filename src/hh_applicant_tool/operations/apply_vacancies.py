@@ -1708,7 +1708,7 @@ class Operation(BaseOperation):
         try:
             r = self.tool.session.get("https://hh.ru/vacancy/" + vacancy["id"])
             r.raise_for_status()
-            desc_match = re.search(r'"description": (.*)', r.text)
+            desc_match = re.search(r'"description":\s*(.*)', r.text)
             if not desc_match:
                 logger.debug(
                     "Описание вакансии %s не найдено — пропускаю фильтр по описанию",

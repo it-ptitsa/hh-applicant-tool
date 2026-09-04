@@ -57,11 +57,14 @@ def del_value(data: dict[str, Any], path: str) -> None:
         return False
 
 
-def parse_scalar(value: str) -> bool | int | float | str:
-    if value == "null":
-        return None
-    if value in ["true", "false"]:
-        return "t" in value
+def parse_scalar(value: str) -> bool | int | float | str | None:
+    match value.lower():
+        case "null":
+            return None
+        case "true":
+            return True
+        case "false":
+            return False
     try:
         return float(value) if "." in value else int(value)
     except ValueError:

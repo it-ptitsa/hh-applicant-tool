@@ -246,16 +246,17 @@
                     </p>
                     <div class="form-grid-3">
                         <div class="form-group">
-                            <label>AI-фильтр вакансий <span class="tip" title="heavy: модель читает полный текст каждой вакансии и решает, откликаться ли (точнее, но медленнее и дороже)&#10;light: модель анализирует только заголовок и ключевые слова (быстро, дёшево, менее точно)">?</span></label>
+                            <label>AI-фильтр вакансий <span class="tip" title="heavy: модель читает полный текст каждой вакансии и решает, откликаться ли (точнее, но медленнее и дороже)&#10;light: модель анализирует только заголовок и ключевые слова (быстро, дёшево, менее точно)&#10;custom: свой системный промпт из поля ниже">?</span></label>
                             <select data-param="ai_filter">
                                 <option value="">Отключён</option>
                                 <option value="heavy">Heavy — полный анализ текста</option>
                                 <option value="light">Light — анализ заголовка</option>
+                                <option value="custom">Custom — свой промпт</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Системный промпт для фильтра</label>
-                            <textarea data-param="system_prompt" rows="2" placeholder="Ты помогаешь находить подходящие вакансии..."></textarea>
+                            <label>Системный промпт (режим custom)</label>
+                            <textarea data-param="ai_filter_prompt" rows="2" placeholder="Ты помогаешь находить подходящие вакансии..."></textarea>
                         </div>
                         <div class="form-group">
                             <label>Промпт для сопроводительного письма</label>
@@ -406,9 +407,9 @@
                                    autocomplete="new-password" placeholder="Введите новый ключ (пустое поле — не менять)">
                         </div>
                         <div class="form-group">
-                            <label>Эндпоинт API <span class="tip" data-tip="URL API провайдера:&#10;OpenAI: https://api.openai.com/v1&#10;OpenRouter: https://openrouter.ai/api/v1&#10;Ollama: http://localhost:11434/v1">?</span></label>
+                            <label>Эндпоинт API <span class="tip" data-tip="Полный URL, обязательно заканчивается на /chat/completions:&#10;OpenAI: https://api.openai.com/v1/chat/completions&#10;OpenRouter: https://openrouter.ai/api/v1/chat/completions&#10;Ollama: http://localhost:11434/v1/chat/completions">?</span></label>
                             <input type="text" data-config-key="openai_cover_letter.base_url"
-                                   placeholder="https://api.openai.com/v1">
+                                   placeholder="https://api.openai.com/v1/chat/completions">
                         </div>
                         <div class="form-group">
                             <label>Модель <span class="tip" data-tip="Название модели у провайдера.&#10;Примеры: gpt-4o-mini, gpt-4o, claude-3-haiku,&#10;mistralai/mistral-7b-instruct">?</span></label>
@@ -433,7 +434,7 @@
                         <div class="form-group">
                             <label>Эндпоинт API</label>
                             <input type="text" data-config-key="openai_vacancy_filter.base_url"
-                                   placeholder="https://api.openai.com/v1">
+                                   placeholder="https://api.openai.com/v1/chat/completions">
                         </div>
                         <div class="form-group">
                             <label>Модель</label>
