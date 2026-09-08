@@ -25,6 +25,7 @@ from ..api.errors import ApiError, CaptchaRequired, LimitExceeded
 from ..main import BaseNamespace, BaseOperation
 from ..storage.repositories.errors import RepositoryError
 from ..utils.datatypes import VacancyTestsData
+from ..utils.find import find_key
 from ..utils.json import JSONDecoder
 from ..utils.string import (
     bool2str,
@@ -1063,6 +1064,8 @@ class Operation(BaseOperation):
                     vacancy["alternate_url"],
                 )
 
+                test_handled = False
+
                 if vacancy.get("has_test"):
                     tests_encountered += 1
 
@@ -1097,6 +1100,7 @@ class Operation(BaseOperation):
                             resume_hash=resume["id"],
                             letter=letter,
                         )
+                        test_handled = True
                         if result.get("success") == "true":
                             applied_count += 1
                             print(
@@ -1119,11 +1123,23 @@ class Operation(BaseOperation):
                                 logger.error(
                                     f"Произошла ошибка при отклике на вакансию с тестом: {vacancy['alternate_url']} - {err}"
                                 )
+                    except ValueError as ex:
+                        # Тест не удалось получить — вакансию НЕ теряем,
+                        # откликаемся как на обычную (поведение апстрима).
+                        if str(ex) == "tests not found.":
+                            logger.warning(
+                                "Не удалось получить тест, пробую откликнуться "
+                                "как на обычную вакансию: %s",
+                                vacancy["alternate_url"],
+                            )
+                        else:
+                            logger.error(f"Произошла непредвиденная ошибка: {ex}")
+                            continue
                     except Exception as ex:
                         logger.error(f"Произошла непредвиденная ошибка: {ex}")
                         continue
 
-                else:
+                if not test_handled:
                     params = {
                         "resume_id": resume["id"],
                         "vacancy_id": vacancy_id,
@@ -1289,36 +1305,32 @@ class Operation(BaseOperation):
         return alive
 
     def _get_vacancy_tests(self, response_url: str) -> VacancyTestsData:
-        """Парсит тесты"""
-        r = self.tool.session.get(response_url)
+        """Парсит тесты.
 
-        # Тесты/капча работают через ВЕБ-сессию (cookies.txt), а не через
-        # API-токен. Веб-куки истекают (~раз в пару недель) и НЕ обновляются
-        # автоматически. Если протухли — hh редиректит на логин, и в HTML нет
-        # данных теста. Раньше это маскировалось под «tests not found».
-        if "account/login" in r.url:
-            raise ValueError(
-                "Веб-сессия истекла (куки разлогинены) — переавторизуйтесь: "
-                "`authorize`. Тесты и капча требуют свежей веб-сессии."
-            )
+        Реализация апстрима (e742566): состояние страницы разбирается через
+        `get_redirect_config` — он сам снимает HTML-экранирование, которым hh
+        оборачивает конфиг (`{&#34;...`), — а нужный ключ ищется рекурсивно
+        по структуре, а не по строковому маркеру в разметке.
 
-        tests_marker = ',"vacancyTests":'
-        start_tests = r.text.find(tests_marker)
-        if start_tests == -1:
-            raise ValueError("tests not found.")
-
-        # Значение vacancyTests — это JSON-объект. Раньше его конец искали по
-        # маркеру ',"counters":', но hh вставил между ними новые ключи
-        # (hhProGenerateResponseLetter, hhProActiveSubscription) → в кусок
-        # попадал лишний JSON и парс падал с «Extra data». Читаем ровно один
-        # JSON-объект через raw_decode — он сам остановится на его конце.
+        Прежний ручной парсинг по маркеру `,"vacancyTests":` ломался при смене
+        разметки: 08.09.2026 так терялось 37% выборки (45 вакансий из 123
+        за прогон) с ложной ошибкой «tests not found».
+        """
         try:
-            data, _ = json.JSONDecoder(strict=False).raw_decode(
-                r.text, start_tests + len(tests_marker)
-            )
-            return data
-        except json.JSONDecodeError as ex:
-            raise ValueError("Не могу распарсить vacancyTests.") from ex
+            config = self.tool.get_redirect_config(response_url)
+        except Exception as ex:
+            # Куки протухли — тесты и капча требуют живой веб-сессии.
+            if "вторизац" in str(ex):
+                raise ValueError(
+                    "Веб-сессия истекла (куки разлогинены) — переавторизуйтесь: "
+                    "`authorize`. Тесты и капча требуют свежей веб-сессии."
+                ) from ex
+            raise
+
+        tests = find_key(config, "vacancyTests")
+        if tests is None:
+            raise ValueError("tests not found.")
+        return tests
 
     def _solve_vacancy_test(
         self,
