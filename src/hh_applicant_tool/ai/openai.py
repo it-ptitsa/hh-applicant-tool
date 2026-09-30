@@ -177,7 +177,9 @@ class ChatOpenAI:
 
         messages = []
 
-        system_prompt = "Ты должен распознать текст на изображении. Верни ТОЛЬКО текст, без каких-либо объяснений или дополнительных символов."
+        from ..captcha import CAPTCHA_SYSTEM_PROMPT, CAPTCHA_USER_PROMPT
+
+        system_prompt = CAPTCHA_SYSTEM_PROMPT
 
         messages.append({"role": "system", "content": system_prompt})
 
@@ -193,7 +195,7 @@ class ChatOpenAI:
                     },
                     {
                         "type": "text",
-                        "text": "Распознай текст на изображении. Верни только результат распознавания (текст на изображении).",
+                        "text": CAPTCHA_USER_PROMPT,
                     },
                 ],
             }
@@ -207,7 +209,8 @@ class ChatOpenAI:
             "model": self.model,
             "messages": messages,
             "temperature": 0.0,
-            "max_completion_tokens": 20,
+            # 20 обрезало ответ моделям с рассуждением (gemini) → пустой текст
+            "max_completion_tokens": 200,
             "stream": False,
         }
 

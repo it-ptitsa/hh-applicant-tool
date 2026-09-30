@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import html
-import http.cookiejar
 import json
 import logging
 import random
@@ -23,6 +22,7 @@ from ..ai.base import AIError
 from ..api import BadResponse, Redirect, datatypes
 from ..api.datatypes import PaginatedItems, SearchVacancy
 from ..api.errors import ApiError, CaptchaRequired, LimitExceeded
+from ..captcha import solve_captcha_in_browser, store_browser_cookies  # noqa: F401
 from ..main import BaseNamespace, BaseOperation
 from ..storage.repositories.errors import RepositoryError
 from ..utils.datatypes import VacancyTestsData
@@ -42,50 +42,6 @@ if TYPE_CHECKING:
 
 
 logger = logging.getLogger(__package__)
-
-
-def store_browser_cookies(jar, browser_cookies) -> None:
-    """Переносит куки из Playwright-контекста в джар сессии.
-
-    `session.cookies` здесь — MozillaCookieJar (точнее HHOnlyCookieJar), а у него
-    нет метода `.set()`: это API requests-джара. Из-за прямого вызова `.set()`
-    решение капчи падало с «'HHOnlyCookieJar' object has no attribute 'set'»
-    уже ПОСЛЕ успешного распознавания текста, и прогон обрывался (24.09.2026 —
-    на 7 откликах). Поддерживаем оба вида джара.
-    """
-    for c in browser_cookies:
-        name, value = c.get("name"), c.get("value")
-        if not name:
-            continue
-        domain = c.get("domain") or ""
-        path = c.get("path") or "/"
-
-        setter = getattr(jar, "set", None)
-        if callable(setter):
-            setter(name, value, domain=domain, path=path)
-            continue
-
-        jar.set_cookie(
-            http.cookiejar.Cookie(
-                version=0,
-                name=name,
-                value=value,
-                port=None,
-                port_specified=False,
-                domain=domain,
-                domain_specified=bool(domain),
-                domain_initial_dot=domain.startswith("."),
-                path=path,
-                path_specified=True,
-                secure=bool(c.get("secure")),
-                expires=int(c["expires"]) if c.get("expires", -1) and c.get("expires", -1) > 0 else None,
-                discard=False,
-                comment=None,
-                comment_url=None,
-                rest={},
-            )
-        )
-
 
 
 class Namespace(BaseNamespace):
@@ -755,52 +711,14 @@ class Operation(BaseOperation):
 {resume_analysis}
 """
 
-    SEL_CAPTCHA_IMAGE = 'img[data-qa="account-captcha-picture"]'
-    SEL_CAPTCHA_INPUT = 'input[data-qa="account-captcha-input"]'
 
-    # Даже куки не грузятся, исправь
     async def _solve_captcha_async(self, captcha_url: str) -> bool:
-        from playwright.async_api import async_playwright
-
+        """Каптча решается в браузере С КУКАМИ аккаунта, с проверкой, что ответ
+        принят, и до 3 попыток (см. hh_applicant_tool/captcha.py)."""
         captcha_ai = self.tool.get_captcha_ai()
-
-        async with async_playwright() as pw:
-            browser = await pw.chromium.launch(headless=True)
-            try:
-                context = await browser.new_context()
-                page = await context.new_page()
-
-                await page.goto(captcha_url, timeout=30000)
-
-                captcha_element = await page.wait_for_selector(
-                    self.SEL_CAPTCHA_IMAGE, timeout=10000, state="visible"
-                )
-
-                img_bytes = await captcha_element.screenshot()
-
-                captcha_text = await asyncio.to_thread(
-                    captcha_ai.solve_captcha, img_bytes
-                )
-
-                if not captcha_text:
-                    logger.error("AI не смог распознать капчу")
-                    return False
-
-                logger.info(f"Распознанный текст капчи: {captcha_text}")
-
-                await page.fill(self.SEL_CAPTCHA_INPUT, captcha_text)
-                await page.press(self.SEL_CAPTCHA_INPUT, "Enter")
-
-                await page.wait_for_load_state("networkidle", timeout=15000)
-
-                cookies = await context.cookies()
-                store_browser_cookies(self.tool.session.cookies, cookies)
-
-                return True
-            finally:
-                await browser.close()
-
-        return False
+        return await solve_captcha_in_browser(
+            captcha_url, self.tool.session.cookies, captcha_ai.solve_captcha
+        )
 
     def _apply_vacancies(self) -> None:
         resumes: list[datatypes.Resume] = self.tool.get_resumes()
