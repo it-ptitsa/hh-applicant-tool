@@ -1,0 +1,42 @@
+schema: spec-driven
+
+context: |
+  Language: ru
+  All artifacts must be written in ru.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+
+  Проект: форк hh-applicant-tool (оригинал github.com/s3rgeym/hh-applicant-tool, remote `upstream`)
+  для менторской программы IT Птица. Наша рабочая ветка — `it-ptitsa` (default), `main` зеркалит
+  оригинал. Репозиторий ПУБЛИЧНЫЙ: данные аккаунтов, письма, токены и куки в git не кладём —
+  только в файлы вне git на сервере (apply.env, digest.env, letter.txt, config/).
+  Прод: сервер, /opt/hh-applicant-tool — git-клон ветки it-ptitsa; запуски только кроном хоста
+  через `docker compose run --rm` (crontab из репо НЕ активен). Один рабочий аккаунт hh.
+  Реальные отклики уходят живым работодателям и не отзываются: любой прогон сначала --dry-run
+  или минимальный, с согласия владельца.
+  Главный риск форка — тихая потеря наших правок при слиянии с оригиналом (август 2026 потерян
+  фикс парсинга тестов). Каждая наша доработка SHALL быть описана в specs/ и закрыта тестом;
+  синхронизация с оригиналом проверяется по этому списку.
+  Тесты: `.venv/bin/python -m pytest -q tests`. Известный долг на 30.09.2026: 6 падающих тестов
+  в test_ai_filter_prompt.py и test_apply_limit_shutdown.py (падали и до синхронизации).
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

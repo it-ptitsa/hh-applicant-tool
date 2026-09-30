@@ -7,6 +7,6 @@ echo "[$(date)] Running startup tasks..."
 # Выполняем цепочку
 /usr/local/bin/python -m hh_applicant_tool refresh-token
 /usr/local/bin/python -m hh_applicant_tool update-resumes
-/usr/local/bin/python -m hh_applicant_tool apply-vacancies
+# apply-vacancies отключён — рассылка только через apply3.sh (крон 9:00 будни)
 
 echo "[$(date)] Startup tasks finished."
