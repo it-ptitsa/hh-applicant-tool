@@ -1,7 +1,7 @@
 # ai-vacancy-filter Specification
 
 ## Purpose
-TBD - created by archiving change sync-upstream-1-9. Update Purpose after archive.
+Отсеивать нерелевантные вакансии ИИ-моделью до отклика в режимах heavy, light и custom.
 
 ## Requirements
 

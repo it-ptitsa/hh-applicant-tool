@@ -19,6 +19,8 @@ include = [
   { path = "src/hh_applicant_tool/**/*.sql", format = ["sdist", "wheel"] },
   # HTML/CSS/JS шаблоны UI
   { path = "src/hh_applicant_tool/ui/templates/**/*", format = ["sdist", "wheel"] },
+  # Образцы каптчи hh для check-captcha
+  { path = "src/hh_applicant_tool/data/**/*", format = ["sdist", "wheel"] },
 ]
 
 [tool.poetry.dependencies]

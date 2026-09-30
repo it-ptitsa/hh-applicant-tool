@@ -1,7 +1,7 @@
 # apply-limits Specification
 
 ## Purpose
-TBD - created by archiving change sync-upstream-1-9. Update Purpose after archive.
+Ограничивать объём и темп рассылки за один запуск: лимит откликов и человекоподобные паузы между ними.
 
 ## Requirements
 

@@ -19,6 +19,9 @@ nano letter.txt
 # 4. (опционально) AI для писем и ответов — вписать ключ, см. §6
 .venv/bin/python -m hh_applicant_tool config -e
 
+# 4б. Каптча hh (обязательно с сентября 2026, иначе рассылка встаёт на ~7 откликах) — см. §6.4
+.venv/bin/python -m hh_applicant_tool check-captcha
+
 # 5. СНАЧАЛА проверка без отправки (--dry-run), потом убрать его для реальной рассылки
 .venv/bin/python -m hh_applicant_tool apply-vacancies -L letter.txt -f \
   --search '(NAME:(frontend OR react OR typescript)) AND NOT NAME:(fullstack OR backend OR QA)' \
@@ -195,6 +198,31 @@ AI нужен для двух задач:
 ```
 
 `reply-employers` пройдёт по активным чатам и ответит **только там, где последнее сообщение — от работодателя** (он реально что-то написал и ждёт ответа). Молчащим работодателям и непросмотренным откликам бот больше **не** пишет — анкеты (зарплата/график/тестовое) тоже пропускает на ручную обработку.
+
+---
+
+## 6.4. Каптча hh — обязательно
+
+С 23.09.2026 hh просит каптчу примерно после 7 откликов подряд. Утилита решает её сама: открывает каптчу в браузере с вашей сессией, распознаёт картинку AI-моделью, вводит ответ, проверяет, что hh его принял, и продолжает рассылку. Для этого нужна **отдельная секция `openai_captcha`** (ключ OpenRouter можно тот же, что для писем):
+
+```bash
+.venv/bin/python -m hh_applicant_tool config -s openai_captcha.base_url https://openrouter.ai/api/v1/chat/completions
+.venv/bin/python -m hh_applicant_tool config -s openai_captcha.api_key sk-or-v1-ВАШ_КЛЮЧ
+.venv/bin/python -m hh_applicant_tool config -s openai_captcha.model google/gemini-2.5-flash
+```
+
+Проверка — **ничего не отправляет**, прогоняет образцы каптчи через вашу модель:
+
+```bash
+.venv/bin/python -m hh_applicant_tool check-captcha
+# ✅ Каптча настроена: 2/2
+```
+
+- Модель — `google/gemini-2.5-flash`: распознаёт каптчу hh лучше всех проверенных. Платная, но копеечная (~$0.001 за попытку, $5 хватит на месяцы).
+- **Бесплатные модели (`:free`, Groq) для каптчи не подходят** — упираются в лимиты и ошибаются.
+- `402` — на ключе OpenRouter нет денег, пополните баланс.
+- Решатель использует браузерную сессию. Если `test-session` ругается — сделайте `auth` заново.
+- Прокси и смена IP не помогают: каптча привязана к аккаунту, а не к адресу.
 
 ---
 
