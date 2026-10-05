@@ -368,6 +368,42 @@ def test_run_two_days_end_to_end(tmp_path):
     assert last.run_at == NOW and last.front_total == 4 and last.js_total == 5
 
 
+def _http_error(status, body):
+    resp = requests.Response()
+    resp.status_code = status
+    resp._content = body.encode()
+    return requests.HTTPError(str(status), response=resp)
+
+
+class CaptchaApi(FakeApi):
+    """05.10.2026: поиск отвечает, а карточки — 403 captcha_required на весь аккаунт."""
+
+    def get(self, path, **params):
+        if path.startswith("/vacancies/"):
+            raise _http_error(403, '{"errors":[{"value":"captcha_required","captcha_url":"https://hh.ru/account/captcha?state=x"}]}')
+        return super().get(path, **params)
+
+
+def test_captcha_on_details_fails_loudly_instead_of_marking_new(tmp_path):
+    """Раньше 403 капчи считался «карточка недоступна»: все кандидаты → новые, пропавшие → закрытые."""
+    store = mm.Store(tmp_path / "market_v2.db")
+    sent = []
+    with pytest.raises(mm.CaptchaRequired):
+        mm.run(CaptchaApi([item(1)], {}), store, now=NOW, send=sent.append, sleep=lambda s: None)
+    assert store.last_run() is None  # испорченный снимок не сохраняется
+    assert len(sent) == 1 and "капч" in sent[0].lower()
+
+
+def test_fetch_detail_404_is_gone_but_captcha_raises():
+    class Api404:
+        def get(self, path, **params):
+            raise _http_error(404, '{"errors":[{"type":"not_found"}]}')
+
+    assert mm.fetch_detail(Api404(), "1") is None
+    with pytest.raises(mm.CaptchaRequired):
+        mm.fetch_detail(CaptchaApi([], {}), "1")
+
+
 def test_run_api_failure_keeps_window_and_reports(tmp_path):
     store = mm.Store(tmp_path / "market_v2.db")
     sent = []

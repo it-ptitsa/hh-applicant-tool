@@ -505,12 +505,34 @@ def fetch_listing(api, country_of: dict[str, str], sleep=time.sleep) -> tuple[li
     return list(found.values()), total
 
 
+class CaptchaRequired(RuntimeError):
+    """hh требует капчу на аккаунт — карточки не отдаются, считать дальше нельзя."""
+
+
+def _is_captcha(response) -> bool:
+    try:
+        errors = response.json().get("errors") or []
+    except Exception:
+        return False
+    return any(e.get("value") == "captcha_required" for e in errors)
+
+
 def fetch_detail(api, vacancy_id: str) -> dict | None:
-    """Детальная карточка; None, если вакансия удалена или закрыта для просмотра."""
+    """Детальная карточка; None, только если вакансия удалена или скрыта работодателем.
+
+    403 captcha_required — НЕ «карточка недоступна»: 05.10.2026 из-за этого все кандидаты
+    молча стали «новыми», а пропавшие — «закрытыми». Капча прерывает прогон целиком.
+    """
     try:
         return api.get(f"/vacancies/{vacancy_id}")
     except requests.HTTPError as ex:
-        if getattr(ex.response, "status_code", None) in (403, 404):
+        response = ex.response
+        if response is not None and _is_captcha(response):
+            raise CaptchaRequired(
+                "hh требует капчу на аккаунт: детальные карточки не отдаются. Новые и переоткрытые"
+                " без них не различить — снимок пропущен, следующий запуск досчитает."
+            ) from ex
+        if getattr(response, "status_code", None) in (403, 404):
             return None
         raise
 
