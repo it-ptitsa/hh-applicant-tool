@@ -669,3 +669,88 @@ def test_snapshot_message_sums_and_lines():
     assert "AI-инженеры на JS/TS: <b>1</b>" in text
     assert "Москва" not in text and "Россия" not in text      # без городов
     assert "lead 1" in text or "лиды 1" in text
+
+
+# ── полный просмотр живого среза 06.10: ошибки фронт-категории (208 вакансий) ──
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("React\u00a0Native Middle Developer", "mobile"),          # неразрывный пробел в названии hh
+    ("Golang + React developer", "fullstack"),
+    ("Разработчик Python/FastAPI + React/TypeScript", "fullstack"),
+    ("Mod Developer / Python & React (Мир Танков)", "fullstack"),
+    ("Web программист PHP / React", "fullstack"),
+    ("Программист на Laravel, Vue.js", "fullstack"),
+    ("Программист-разработчик (Vue.js / C#)", "fullstack"),
+    ("Senior Java + Angular разработчик", "fullstack"),
+    ("Тимлид разработки (C#/.NET + Angular, AI-assisted development )", "fullstack"),
+    ("Старший Разработчик полного цикла (Python, Golang, React) [МТС Веб Сервисы]", "fullstack"),
+    ("Разработчик WEB (PHP / Java / Frontend)", "fullstack"),
+    ("Fulstack-разработчик Python, Vue.js (инфраструктурные сервисы)", "fullstack"),
+    ("Senior DevOps Engineer(Front-end team)", "other"),
+    ("Разработчик сайтов WordPress / Верстальщик", "other"),
+    ("Reverse Engineer / Researcher JavaScript", "other"),
+    ("Frontend-разработчик (Angular)", "front"),
+    ("Frontend-разработчик / координатор проектов", "front"),
+])
+def test_front_review_0610(name, expected):
+    assert mm.classify(name) == expected
+
+
+def test_director_is_lead():
+    assert mm.grade("Director of Frontend (Vue.JS) Engineering (управление через TLeads)") == "lead"
+
+
+def test_primary_stack_prefers_title_over_snippet():
+    v = vac(40, name="Разработчик (Фронтенд / Vue.js) Middle+", snippet="React будет плюсом")
+    assert v.primary_stack == "vue"
+
+
+# ── полный просмотр живого среза 06.10: ошибки fullstack (226 вакансий) ──
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("Руководитель группы разработки (Ведущий Fullstack Developer PHP/JS + DevOps)", "fullstack"),
+    ("Junior Fullstack-разработчик / DevOps / Системный инженер", "fullstack"),
+    ("Senior DevOps Engineer(Front-end team)", "other"),
+    ("ИИ-инженер полного цикла", "ai"),
+    ("Старший Разработчик полного цикла (Python, Golang, React) [МТС Веб Сервисы]", "fullstack"),
+    ("Ведущий системный инженер (Fullstack & Embedded)", "other"),
+    ("FullStack разработчик Opencart", "fullstack_other"),
+    ("Fullstack/Backend-разработчик Go / PHP — рекламная сеть ttarget", "fullstack_other"),
+    ("Full Stack (Frontend + Backend) IT o\u2018qituvchi", "nontech"),
+    ("Backend / Fullstack Developer (NestJS / TypeScript)", "fullstack"),
+    ("Staff Fullstack/Backend Engineer", "fullstack"),
+])
+def test_fullstack_review_0610(name, expected):
+    assert mm.classify(name) == expected
+
+
+def test_internal_is_not_intern():
+    assert mm.grade("Fullstack Developer (Internal Products & Automation)") is None
+    assert mm.grade("Intern Front-end Developer") == "junior"
+
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("JS стажёр", "front"),
+    ("Lead/Senior Game Developer (Pixi.JS) / Ведущий разработчик", "front"),
+    ("Automation Quality Assurance Engineer (JS/Playwright)", "qa"),
+])
+def test_excluded_review_0610(name, expected):
+    assert mm.classify(name) == expected
+
+
+# ── эталон: каждая будущая правка классификатора сверяется с просмотренной живой выдачей ──
+
+GOLDEN = Path(__file__).parent / "fixtures" / "market_golden.tsv"
+
+
+def test_golden_set_classification_is_exact():
+    rows = [l.rstrip("\n").split("\t") for l in GOLDEN.read_text(encoding="utf-8").splitlines()
+            if l and not l.startswith("#")]
+    assert len(rows) >= 640
+    wrong = [(n, c, mm.classify(n)) for n, c, _ in rows if mm.classify(n) != c]
+    wrong_grade = [(n, g, mm.grade(n)) for n, _, g in rows if (mm.grade(n) or "-") != g]
+    assert not wrong, f"категория разошлась с эталоном у {len(wrong)}: {wrong[:10]}"
+    assert not wrong_grade, f"грейд разошёлся с эталоном у {len(wrong_grade)}: {wrong_grade[:10]}"

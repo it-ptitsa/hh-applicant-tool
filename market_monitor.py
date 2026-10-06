@@ -77,41 +77,45 @@ LIST_TITLE_LIMIT = 90
 
 # ── категории по названию ───────────────────────────────────────────────
 
-_QA = re.compile(r"\bqa\b|aqa|тестиров|автотест|\bsdet\b|test engineer", re.I)
+_QA = re.compile(r"\bqa\b|aqa|тестиров|автотест|\bsdet\b|test engineer|quality assurance", re.I)
 # Нетех-профессии, которые не перебиваются лид-словом: «Team Lead аналитиков» — аналитик.
 _NONTECH_STRICT = re.compile(
     r"аналитик|analyst|дизайнер|designer|преподават|учител|наставник|ментор"
-    r"|teacher|tutor|рекрутер|recruit|product owner|продакт|scrum", re.I)
+    r"|teacher|tutor|рекрутер|recruit|product owner|продакт|scrum|o.qituvchi", re.I)
 # «менеджер» — нетех, если это не руководитель разработки («Engineering Manager (Frontend)»).
 _MANAGER = re.compile(r"менеджер|manager", re.I)
-_MOBILE = re.compile(r"react native|android|\bios\b|flutter|mobile|мобильн", re.I)
-_FULLSTACK = re.compile(r"full.?stack|ful+.?стек|фул+.?стек", re.I)
+# \s, а не пробел: в названиях hh встречается неразрывный пробел («React\xa0Native»)
+_MOBILE = re.compile(r"react\s+native|android|\bios\b|flutter|mobile|мобильн", re.I)
+_FULLSTACK = re.compile(r"ful+.?stack|ful+.?стек|фул+.?стек|разработчик полного цикла", re.I)  # и «Fulstack»
 _BACKEND = re.compile(r"backend|back-end|бэкенд|бекенд|серверн|\bnode|\bnest", re.I)
 _FRONT_STRONG = re.compile(
     r"front|фронт|react|\bvue|angular|svelte|nuxt|next\.?js|ui\s*-?\s*(разработ|developer)"
     r"|интерфейс|верст|html", re.I)
 # Голое «JS» не годится: 05.10 во фронт попал «Машинист экскаватора (JCB JS 260)».
 _FRONT_LANG = re.compile(
-    r"typescript|javascript|\bjs\s*-?\s*(разработ|программ|developer|engineer)"
+    r"typescript|javascript|pixi\.?js|\bjs\s*-?\s*(разработ|программ|developer|engineer|стаж|intern)"
     r"|\bts\s*-?\s*(разработ|developer)", re.I)
 # Fullstack на чужом бэкенде без фронт-стека в названии — не JS-рынок.
 _NON_JS_STACK = re.compile(
     r"\.net|c#|java\b|kotlin|python|django|php|laravel|golang|\bgo\b|c\+\+|ruby|delphi"
-    r"|битрикс|bitrix|wordpress|\b1с\b|\b1c\b", re.I)
+    r"|битрикс|bitrix|wordpress|opencart|drupal|joomla|modx|\b1с\b|\b1c\b", re.I)
 _CMS = re.compile(r"битрикс|bitrix|wordpress|\b1с\b|\b1c\b|drupal|opencart|joomla|modx|tilda", re.I)
 _WEB = re.compile(r"веб|web", re.I)
+_FRAMEWORK = re.compile(r"react|\bvue|angular|svelte|nuxt|next\.?js", re.I)
 _LEAD = re.compile(
     r"team.?lead|тимлид|tech.?lead|техлид|\blead\b|\bлид\b|руководител|head of|engineering manager"
-    r"|архитект|architect", re.I)
+    r"|архитект|architect|director|директор|\bcto\b", re.I)
+_OTHER_IT = re.compile(r"devops|\bsre\b|reverse engineer|researcher|исследовател|embedded|встраива", re.I)
 _PM = re.compile(r"руководитель проект|project manager|руководитель отдела продаж", re.I)
 _SENIOR = re.compile(r"senior|старш|ведущ|сеньор|сениор", re.I)
 _MIDDLE = re.compile(r"middle|мидл", re.I)
-_JUNIOR = re.compile(r"junior|младш|джун|стаж|intern|trainee", re.I)
+_JUNIOR = re.compile(r"junior|младш|джун|стаж|\bintern\b|trainee", re.I)  # не «Internal»
 _AI = re.compile(r"\bai\b|\bии\b|llm|vibe|вайб|prompt|промпт|agentic", re.I)
 _JS_NEAR = re.compile(
     r"front|фронт|react|\bvue|angular|svelte|typescript|javascript|\bjs\b|node|nest|next\.?js"
     r"|full.?stack|ful+.?стек|фул+.?стек|\bweb|веб", re.I)
 _NODE = re.compile(r"\bnode|\bnest|express", re.I)
+_NODE_TITLE = re.compile(r"\bnode|\bnest", re.I)
 _JS_STRONG = re.compile(
     r"typescript|javascript|react|\bvue|angular|svelte|\bnode|\bnest|next\.?js|frontend|фронтенд", re.I)
 _AI_NON_JS = re.compile(r"unity|\bml\b|ml-|gamedev|data scien|computer vision|\bcv\b|nlp", re.I)
@@ -139,13 +143,23 @@ def classify(name: str) -> str:
     backend = bool(_BACKEND.search(name))
     strong = bool(_FRONT_STRONG.search(name))
     if _FULLSTACK.search(name):
-        # внутри fullstack голое «JS» — это JavaScript («Full-stack Developer (PHP / JS)»)
-        js_stack = strong or backend or _FRONT_LANG.search(name) or re.search(r"\bjs\b", name, re.I)
+        if re.search(r"embedded|встраива", name, re.I):  # «Fullstack & Embedded» — не веб
+            return "other"
+        # голое «JS» внутри fullstack — JavaScript; голое «Backend» — НЕ признак JS-стека
+        js_stack = (strong or _NODE_TITLE.search(name) or _FRONT_LANG.search(name)
+                    or re.search(r"\bjs\b", name, re.I))
         if not js_stack and _NON_JS_STACK.search(name):
             return "fullstack_other"
         return "fullstack"
+    if _OTHER_IT.search(name):  # «Senior DevOps Engineer (Front-end team)» — DevOps, не фронт
+        return "other"
     if backend and strong:  # «Frontend / Node.js developer» — это fullstack
         return "fullstack"
+    # фронт-фреймворк + чужой бэкенд-язык без слова fullstack: «Golang + React», «Java + Angular»
+    if strong and _NON_JS_STACK.search(name) and not _CMS.search(name):
+        return "fullstack"
+    if _CMS.search(name) and not _FRAMEWORK.search(name):  # «Сайты WordPress / Верстальщик»
+        return "other"
     if _AI.search(name) and not strong:  # AI-инженер без фронт-слов; рядом ли JS — решит _category
         return "ai"
     if backend:  # язык (TypeScript/JavaScript) без явного фронта — бэкенд
@@ -323,6 +337,13 @@ def _snippet(item: dict) -> str:
     return " ".join(x for x in (sn.get("requirement"), sn.get("responsibility")) if x)
 
 
+def _stack(name: str, text: str) -> tuple[str, ...]:
+    """Фреймворки: сначала из названия (оно точнее), затем добавочные из требований."""
+    in_title = [s for s, rx in STACKS if rx.search(name)]
+    in_text = [s for s, rx in STACKS if rx.search(text) and s not in in_title]
+    return tuple(in_title + in_text)
+
+
 def parse_vacancy(item: dict, country_of: dict[str, str], it_roles: set[str] | None = None,
                   node_ids: Iterable[str] = frozenset()) -> Vacancy:
     employer = (item.get("employer") or {}).get("name") or "—"
@@ -343,7 +364,7 @@ def parse_vacancy(item: dict, country_of: dict[str, str], it_roles: set[str] | N
         salary_to=salary.get("to"),
         currency=salary.get("currency"),
         url=item.get("alternate_url") or f"https://hh.ru/vacancy/{item['id']}",
-        stack=tuple(s for s, rx in STACKS if rx.search(text)),
+        stack=_stack(name, text),
         node=bool(_NODE.search(text)) or str(item["id"]) in set(node_ids),
         ai=bool(_AI.search(name)),
     )

@@ -1,0 +1,648 @@
+# Эталон классификации: живая выдача hh 06.10.2026, каждая строка просмотрена глазами.
+# Формат: название<TAB>категория<TAB>грейд. Правка классификатора обязана сохранить 100% совпадение;
+# расхождение = либо ошибка в коде, либо осознанное решение (тогда правится эталон с объяснением в коммите).
+.NET FullStack-разработчик	fullstack_other	-
+AI DevOps-инженер	other	-
+AI Engineer (Fullstack)	fullstack	-
+AI-First Embedded / Firmware Engineer	other	-
+AI-First Frontend Developer (React/Next.js)	front	-
+AI-driven Full-Stack разработчик (Middle)	fullstack	middle
+AI-native Product Manager	nontech	-
+AI-native Project Manager / Delivery Lead	nontech	lead
+AI-native дизайнер	nontech	-
+AI-разработчик / Full-stack разработчик (работа в офисе)	fullstack	-
+AI/1С-разработчик (LLM, MCP)	other	-
+AQA Engineer (Java + ML/LLM, Middle+/Senior)	qa	senior
+Android (AI-native) разработчик	mobile	-
+Angular-разработчик	front	-
+Back-end Node. JS-developer (Senior)	backend	senior
+Backend / Fullstack Developer (NestJS / TypeScript)	fullstack	-
+Backend Developer (Java Spring / Node.js)	backend	-
+Backend Engineer — Node.js	backend	-
+Backend-разработчик (NestJS / TypeScript)	backend	-
+Backend-разработчик (NestJS, FastAPI)	backend	-
+Backend-разработчик (Node.js / NestJS), Middle–Senior	backend	senior
+Backend-разработчик (Node.js / TypeScript)	backend	-
+Backend-разработчик (NodeJS)	backend	-
+Backend-разработчик (TypeScript/Node.js)	backend	-
+Backend-разработчик Node.js/Express.js	backend	-
+Backend-разработчик Node.js/Express.js (офис)	backend	-
+Backend-разработчик Node.js/TypeScript	backend	-
+Backend-разработчик, Frontend-разработчик	fullstack	-
+C#/.NET web-разработчик	web	-
+C++/Fullstack разработчик	fullstack_other	-
+Data Analyst (NLP / LLM)	nontech	-
+DevOps-инженер (ML/AI, DevSecOps, MLSecOps)	other	-
+DevOps-инженер (ML/LLM/CV)	other	-
+DevOps/MLOps инженер AI-платформы (LLM/VLM, GPU, RAG)	other	-
+Digital Designer (UX/UI + Web Development WordPress)	nontech	-
+Director of Frontend (Vue.JS) Engineering (управление через TLeads)	front	lead
+FiveM-разработчик — TypeScript, серверная и клиентская логика	backend	-
+Flutter (AI native) разработчик	mobile	-
+Forward Deployed Engineer (AI / Fullstack)	fullstack	-
+Front-end TypeScript разработчик	front	-
+Front-end и mobile разработчик	mobile	-
+FrontEnd NextJS Разработчик	front	-
+Frontend (AI-native) разработчик	front	-
+Frontend / Android Developer (React Native)	mobile	-
+Frontend Developer	front	-
+Frontend Developer (AI-first)	front	-
+Frontend Developer (AngularJS + JSP + Bootstrap)	front	-
+Frontend Developer (React/Next.js)	front	-
+Frontend Developer (React/TypeScript)	front	-
+Frontend Developer (React/TypeScript, GameDev)	front	-
+Frontend Developer — Middle	front	middle
+Frontend Engineer (React)	front	-
+Frontend Game Developer / HTML5 Game Developer	front	-
+Frontend Product Engineer	front	-
+Frontend developer (react/redux)	front	-
+Frontend Разработчик (Angular)	front	-
+Frontend Разработчик - React	front	-
+Frontend разработчик	front	-
+Frontend разработчик (Angular, JS, TypeScript)	front	-
+Frontend разработчик (Angular, middle), офис	front	middle
+Frontend разработчик (React / TypeScript)	front	-
+Frontend разработчик (React, TypeScript, Next.js)	front	-
+Frontend разработчик (React/React Native)	mobile	-
+Frontend разработчик (Vue.js) Middle/Senior	front	senior
+Frontend разработчик (Vue\Nuxt)	front	-
+Frontend- разработчик (Smart TV)	front	-
+Frontend-developer Angular	front	-
+Frontend-разработчик	front	-
+Frontend-разработчик (AI)	front	-
+Frontend-разработчик (Angular)	front	-
+Frontend-разработчик (Cursor IDE)	front	-
+Frontend-разработчик (Junior)	front	junior
+Frontend-разработчик (Middle, AI-Driven)	front	middle
+Frontend-разработчик (React / Next.js)	front	-
+Frontend-разработчик (React)	front	-
+Frontend-разработчик (React, Офис)	front	-
+Frontend-разработчик (Vue 2/3, Nuxt)	front	-
+Frontend-разработчик (Vue)	front	-
+Frontend-разработчик (Vue) в it-компанию Clockster	front	-
+Frontend-разработчик (react)	front	-
+Frontend-разработчик (Алматы)	front	-
+Frontend-разработчик (МГТС)	front	-
+Frontend-разработчик (Разработка игр)	front	-
+Frontend-разработчик (внутренние сервисы)	front	-
+Frontend-разработчик (мобильные приложения)	mobile	-
+Frontend-разработчик (процессы обработки и защиты ПДн)	front	-
+Frontend-разработчик (эксперт)	front	-
+Frontend-разработчик / координатор проектов	front	-
+Frontend-разработчик Junior/Middle	front	middle
+Frontend-разработчик React	front	-
+Frontend-разработчик Vue	front	-
+Frontend-разработчик Vue 3 / TypeScript (Middle)	front	middle
+Frontend-разработчик Vue.js	front	-
+Frontend-разработчик Vue.js (middle)	front	middle
+Frontend-разработчик Vue.js (в офис)	front	-
+Frontend-разработчик Vue3	front	-
+Frontend-разработчик senior	front	senior
+Frontend-разработчик в команду Web App	front	-
+Frontend-разработчик — Angular	front	-
+Frontend-разработчик/ UI UX	front	-
+Frontend-разработчика (Angular)	front	-
+Full Stack (Frontend + Backend) IT o‘qituvchi	nontech	-
+Full Stack - разработчик на Java + JavaScript (React / Angular / HTML+CSS), г. Минск	fullstack	-
+Full Stack Data (engineer + analyst)	nontech	-
+Full Stack Developer (Node.js+React)	fullstack	-
+Full Stack Developer (Node.js, TypeScript, SQL)	fullstack	-
+Full Stack Developer (Wordpress/React)	fullstack	-
+Full Stack Developer / Фуллстек разработчик (C#, React)	fullstack	-
+Full Stack Engineer (Agentic Development)	fullstack	-
+Full Stack Engineer (Kandinsky)	fullstack	-
+Full Stack Engineer (Кандинский)	fullstack	-
+Full Stack QA (Python)	qa	-
+Full Stack QA Engineer	qa	-
+Full Stack Test Engineer Trainee	qa	junior
+Full Stack/Software Engineer (USA, MedTech)	fullstack	-
+Full stack аналитик	nontech	-
+Full stack разработчик	fullstack	-
+Full-Stack Developer (React / Next.js / Node.js / NestJS)	fullstack	-
+Full-Stack QA Engineer	qa	-
+Full-Stack QA Engineer (AI-Native, Python)	qa	-
+Full-Stack QA specialist (Java)	qa	-
+Full-stack .Net C#/React Developer	fullstack	-
+Full-stack Analyst / Фулстэк аналитик	nontech	-
+Full-stack Developer (PHP / JS)	fullstack	-
+Full-stack Python-разработчик	fullstack_other	-
+Full-stack QA Engineer (Java, Python)	qa	-
+Full-stack QA Engineer (Manual + Automation, Python)	qa	-
+Full-stack QA/AQA Engineer	qa	-
+Full-stack analyst	nontech	-
+Full-stack developer (Node.js / React)	fullstack	-
+Full-stack engineer (AI-native) Python/React	fullstack	-
+Full-stack аналитик	nontech	-
+Full-stack аналитик (AI / Data)	nontech	-
+Full-stack аналитик (Business / System)	nontech	-
+Full-stack разработчик	fullstack	-
+Full-stack разработчик (Java/Vue), HR платформа	fullstack	-
+Full-stack разработчик (Python / React) в AI-платформу ГигаЧат Бизнес	fullstack	-
+Full-stack разработчик .NET + AI-агенты	fullstack_other	-
+Full-stack разработчик AI-first	fullstack	-
+Full-stack разработчик E-commerce (PHP, Drupal) / Веб-разработчик	fullstack_other	-
+Full-stack разработчик на ИИ и продукты (Центр компетенций в сфере искусственного интеллекта)	fullstack	-
+Full-stack тестировщик Java/Python	qa	-
+Full-stack-разработчик	fullstack	-
+FullStack QA специалист	qa	-
+FullStack QA специалист (Java)	qa	-
+FullStack аналитик (в Банк)	nontech	-
+FullStack разработчик Opencart	fullstack_other	-
+FullStack-аналитик	nontech	-
+FullStack-разработчик	fullstack	-
+FullStack-разработчик (ASP.NET, Angular 17, TypeScript) (проект Лоцман: PLM)	fullstack	-
+FullStack-разработчик (Middle)	fullstack	middle
+Fullstack - аналитик	nontech	-
+Fullstack AI Engineer	fullstack	-
+Fullstack AI-инженер	fullstack	-
+Fullstack Analyst	nontech	-
+Fullstack C# разработчик	fullstack_other	-
+Fullstack Developer	fullstack	-
+Fullstack Developer (AI Native)	fullstack	-
+Fullstack Developer (Frontend) / Fullstack Разработчик (фронтенд)	fullstack	-
+Fullstack Developer (Frontend-focused) / Fullstack Разработчик (с уклоном во фронтенд)	fullstack	-
+Fullstack Developer (Internal Products & Automation)	fullstack	-
+Fullstack Developer (Middle+ )	fullstack	middle
+Fullstack Developer (Node.js + React.js)	fullstack	-
+Fullstack Developer (Python + React)	fullstack	-
+Fullstack Developer AI First	fullstack	-
+Fullstack Developer/AI Engineer (AI Product)	fullstack	-
+Fullstack Engineer AI	fullstack	-
+Fullstack Mobile Developer	mobile	-
+Fullstack Node.js/TypeScript разработчик	fullstack	-
+Fullstack QA	qa	-
+Fullstack QA (Brokerage)	qa	-
+Fullstack QA (Java)	qa	-
+Fullstack QA (ручное + авто)	qa	-
+Fullstack QA Engineer	qa	-
+Fullstack QA Engineer (.NET)	qa	-
+Fullstack QA Engineer (Python)	qa	-
+Fullstack QA engineer	qa	-
+Fullstack QA engineer (Автоматизация)	qa	-
+Fullstack QA инженер (VoIP)	qa	-
+Fullstack QA инженер в команду Кредитования	qa	-
+Fullstack QA специалист	qa	-
+Fullstack QA тестировщик Java	qa	-
+Fullstack QA(Java)	qa	-
+Fullstack QA(Python)	qa	-
+Fullstack Ruby on Rails разработчик Middle+/Senior	fullstack_other	senior
+Fullstack Software Engineer (AI & Video / Agents)	fullstack	-
+Fullstack Software engineer (Python + React)	fullstack	-
+Fullstack Team Lead / Tech Lead (PHP)	fullstack_other	lead
+Fullstack analyst (AI/ML)	nontech	-
+Fullstack web-разработчик (Vue.js/Nuxt.js) - Минск	fullstack	-
+Fullstack Аналитик	nontech	-
+Fullstack Разработчик (Vue/React + Laravel/Yii ) + CODEX	fullstack	-
+Fullstack аналитик	nontech	-
+Fullstack аналитик (FMCG/Retail)	nontech	-
+Fullstack аналитик (Middle+/Senior)	nontech	senior
+Fullstack аналитик (payments)	nontech	-
+Fullstack аналитик (Расчет рисков)	nontech	-
+Fullstack аналитик (бизнес/системный аналитик)	nontech	-
+Fullstack аналитик B2B	nontech	-
+Fullstack аналитик данных (DA+DE middle/senior) в службу бизнес аналитики и планирования	nontech	senior
+Fullstack инженер-программист C#/.NET (SignalR, Linux)	fullstack_other	-
+Fullstack программист-разработчик WEB-приложений (NodeJS, React, PostgreSQL)	fullstack	-
+Fullstack разработчик (.NET + Angular)	fullstack	-
+Fullstack разработчик (Laravel)	fullstack_other	-
+Fullstack разработчик (Middle up)	fullstack	middle
+Fullstack разработчик (Python / FastAPI)	fullstack_other	-
+Fullstack разработчик Bitrix 24 (ОФИС)	fullstack_other	-
+Fullstack разработчик Java/JavaScript	fullstack	-
+Fullstack разработчик Middle+/Senior	fullstack	senior
+Fullstack разработчик PHP / Node + Vue / Nuxt (работа в офисе г. Новосибирск)	fullstack	-
+Fullstack разработчик WordPress	fullstack_other	-
+Fullstack тестировщик (Kotlin)	qa	-
+Fullstack тестировщик (java)	qa	-
+Fullstack-аналитик	nontech	-
+Fullstack-аналитик (Bitrix24)	nontech	-
+Fullstack-аналитик (Task Mining)	nontech	-
+Fullstack-аналитик (Астра Консалтинг)	nontech	-
+Fullstack-аналитик (бизнес-аналитик)	nontech	-
+Fullstack-аналитик (в сфере логистики)	nontech	-
+Fullstack-аналитик 1C	nontech	-
+Fullstack-инженер (GigaBlock)	fullstack	-
+Fullstack-инженер AI-native разработки	fullstack	-
+Fullstack-разработчик	fullstack	-
+Fullstack-разработчик (.NET + Vue.js)	fullstack	-
+Fullstack-разработчик (.Net+ Angular)	fullstack	-
+Fullstack-разработчик (AI)	fullstack	-
+Fullstack-разработчик (AI-first, vibe coding)	fullstack	-
+Fullstack-разработчик (Go + Vue.js)	fullstack	-
+Fullstack-разработчик (JavaScript / TypeScript, PHP)	fullstack	-
+Fullstack-разработчик (Middle)	fullstack	middle
+Fullstack-разработчик (Middle+ / Senior)	fullstack	senior
+Fullstack-разработчик (Middle+)	fullstack	middle
+Fullstack-разработчик (Node.js / Next.js, упор на backend)	fullstack	-
+Fullstack-разработчик (PHP / Laravel + React) / AI-Native Developer	fullstack	-
+Fullstack-разработчик (PHP/Laravel, AI-first)	fullstack_other	-
+Fullstack-разработчик (Python / JavaScript / ГИС)	fullstack	-
+Fullstack-разработчик (React, Node.js)	fullstack	-
+Fullstack-разработчик (React/Node.js)	fullstack	-
+Fullstack-разработчик (Senior C#, PHP)	fullstack_other	senior
+Fullstack-разработчик (TypeScript / Java / React)	fullstack	-
+Fullstack-разработчик (TypeScript · React )	fullstack	-
+Fullstack-разработчик (TypeScript, JavaScript, Angular, React, Vue.js, .NET)	fullstack	-
+Fullstack-разработчик (Web / AI-assisted development)	fullstack	-
+Fullstack-разработчик (middle + / senior)/ Node JS + React / GO + React	fullstack	senior
+Fullstack-разработчик (web-разработчик)	fullstack	-
+Fullstack-разработчик (Астра Облако)	fullstack	-
+Fullstack-разработчик (Битрикс24)	fullstack_other	-
+Fullstack-разработчик / AI Developer	fullstack	-
+Fullstack-разработчик / AI-инженер	fullstack	-
+Fullstack-разработчик Angular + C#/.NET	fullstack	-
+Fullstack-разработчик Bitrix (PHP)	fullstack_other	-
+Fullstack-разработчик Middle	fullstack	middle
+Fullstack-разработчик PHP · React · API только Санкт-Петербург	fullstack	-
+Fullstack-разработчик Битрикс24	fullstack_other	-
+Fullstack-разработчик в зарубежную компанию (Таиланд)	fullstack	-
+Fullstack-разработчик в команду автоматизации бухгалтерии	fullstack	-
+Fullstack-разработчик сайтов (программист/верстальщик, junior)	fullstack	junior
+Fullstack-разработчик/техлид (.net/react)	fullstack	lead
+Fullstack/Backend-разработчик Go / PHP — рекламная сеть ttarget	fullstack_other	-
+Fullstack‑аналитик (бизнес + системный)	nontech	-
+Fulstack-разработчик Python, Vue.js (инфраструктурные сервисы)	fullstack	-
+GO разработчик (МТС Веб Сервисы, КИОН Музыка)	web	-
+Golang + React developer	fullstack	-
+IOS (AI-native) разработчик	mobile	-
+IT-специалист / Младший Frontend-разработчик (Junior / Trainee React)	front	junior
+Intern Front-end Developer	front	junior
+Intern/Junior Full-stack engineer	fullstack	junior
+JS Fullstack Инженер (Node.js + Vue.js)	fullstack	-
+JavaScript Trainee	front	junior
+JavaScript-разработчик	front	-
+JavaScript/React разработчик (стажер)	front	junior
+Junior AI-first Engineer (AI Fullstack)	fullstack	junior
+Junior Frontend-разработчик	front	junior
+Junior FullStack-разработчик (TypeScript, VueJS, NestJS)	fullstack	junior
+Junior Fullstack Разработчик	fullstack	junior
+Junior Fullstack разработчик	fullstack	junior
+Junior Fullstack-разработчик (Python/Django + фронтенд)	fullstack	junior
+Junior Fullstack-разработчик / DevOps / Системный инженер	fullstack	junior
+Junior JavaScript/TypeScript​​​​​​​ Developer (Belarus)	front	junior
+Junior+ JS Fullstack-разработчик	fullstack	junior
+Lead DevOps / Platform Lead / AI-First DevEx	other	lead
+Lead Senior System Analyst (AI-augmented development)	nontech	lead
+ML Engineer/Аналитик BigData (ML, LLM)	nontech	-
+ML Инженер / Инженер по машинному обучению	other	-
+Middle / AI Product Engineer (Fullstack)	fullstack	middle
+Middle / Senior Full-stack аналитик (государственный проект)	nontech	senior
+Middle AI-driven Full-stack разработчик	fullstack	middle
+Middle Angular разработчик	front	middle
+Middle Backend Developer (Node.js / NestJS)	backend	middle
+Middle Frontend Developer	front	middle
+Middle Frontend Developer (React / Next.js)	front	middle
+Middle Frontend Developer Angular	front	middle
+Middle Frontend-разработчик	front	middle
+Middle Full Stack Engineer — NestJS / Next.js	fullstack	middle
+Middle Full-Stack Developer (Python)	fullstack_other	middle
+Middle Full-Stack разработчик PHP (офис)	fullstack_other	middle
+Middle Full-stack разработчик (.NET / React)	fullstack	middle
+Middle FullStack Python QA Engineer (HR платформа)	qa	middle
+Middle Fullstack Developer (Ruby + React.js)	fullstack	middle
+Middle Fullstack QA (HR платформа)	qa	middle
+Middle Fullstack QA Engineer (CRM)	qa	middle
+Middle Fullstack разработчик Bitrix24 (Коробка)	fullstack_other	middle
+Middle Fullstack тестировщик (Сбер КПК КИБ)	qa	middle
+Middle Fullstack-разработчик (Java, React)	fullstack	middle
+Middle Fullstack-разработчик (PHP)	fullstack_other	middle
+Middle Node.js Developer	backend	middle
+Middle Node.js backend developer	backend	middle
+Middle Vue / Nuxt Frontend Developer	front	middle
+Middle devops инженер (LLM модели)	other	middle
+Middle frontend developer	front	middle
+Middle frontend-разработчик (Vue.js, в Астане)	front	middle
+Middle+ Devops -инженер в AI HUB (в Москве)	other	middle
+Middle+ Frontend Developer (React)	front	middle
+Middle+ JS Fullstack-разработчик	fullstack	middle
+Middle+/Senior Backend Developer (Node.js)	backend	senior
+Middle+/Senior Frontend-разработчик (JS/Angular)	front	senior
+Middle+/Senior Fullstack C# (.NET) Developer	fullstack_other	senior
+Middle+/Senior Fullstack аналитик (бизнес-системный)	nontech	senior
+Middle/Senior Frontend Developer (React / TypeScript)	front	senior
+Middle/Senior JS-разработчик	front	senior
+Middle/middle+ fullstack-разработчик (Python / TypeScript)	fullstack	middle
+Mod Developer / Python & React (Мир Танков)	fullstack	-
+Node Support Engineer	backend	-
+Nodejs (nestjs) middle developer	backend	middle
+Nodejs Инженер-программист	backend	-
+PHP Fullstack Разработчик (Bitrix)	fullstack_other	-
+PHP-разработчик / Fullstack-разработчик	fullstack_other	-
+Principal full-stack engineer (Cybersecurity)	fullstack	-
+Product Owner AI-native продукта	nontech	-
+Prompt Engineer / AI System Analyst	nontech	-
+QA (fullstack)	qa	-
+QA / Инженер по тестированию (Фуллстек)	qa	-
+QA Automation Engineer JS/TS (Senior)	qa	senior
+QA Engineer (AI-Native)	qa	-
+QA Engineer (Frontend)	qa	-
+QA Engineer Automation (WEB JS/ТS, Playwright)	qa	-
+QA Engineer FullStack	qa	-
+QA Engineer Fullstack (manual + auto Python)	qa	-
+QA Full-stack Engineer	qa	-
+QA Full-stack Engineer (Java)	qa	-
+QA Fullstack	qa	-
+QA Fullstack (AT Java)	qa	-
+QA Fullstack (Manual+AT C#)	qa	-
+QA Fullstack (стек C#)	qa	-
+QA Fullstack Java специалист	qa	-
+QA Fullstack инженер	qa	-
+QA Fullstack на JAVA	qa	-
+QA fullstack инженер (C#)	qa	-
+QA инженер (Python/AI)	qa	-
+QA-инженер (AI First, CRM)	qa	-
+QA-инженер (SDD / AI-Driven Testing)	qa	-
+QA-инженер AI-агента (тестирование и разметка данных)	qa	-
+QA-инженер AI/LLM-систем	qa	-
+QA-инженер Fullstack	qa	-
+QA-инженер fullstack	qa	-
+QA-инженер fullstack (Java)	qa	-
+React Frontend Developer	front	-
+React Native Middle+/Senior Developer	mobile	senior
+React Native разработчик	mobile	-
+React Native разработчик (Middle+) в беттинг приложение	mobile	middle
+React js - frontend-разработчик	front	-
+React-разработчик (Middle+)	front	middle
+React Native Middle Developer	mobile	middle
+Reverse Engineer / Researcher JavaScript	other	-
+SAP BTP Full-Stack Developer (UI5 & CAP)	fullstack	-
+SDET / Разработчик AI решений (HR платформа)	qa	-
+SDET/QA Инженер (PHP/Laravel, Vue.js)	qa	-
+SRE Senior инженер (ИИ-помощник)	other	senior
+Senior AQA engineer с опытом руководства (JavaScript/TypeScript)	qa	senior
+Senior AQA engineer/ Руководитель отдела тестирования (Manual + Auto, JS/TS)	qa	lead
+Senior Angular Developer	front	senior
+Senior Automation QA Frontend (Java + Playwright)	qa	senior
+Senior Backend Engineer (Node.js / TypeScript)	backend	senior
+Senior Creative Front-end Developer	front	senior
+Senior DevOps Engineer(Front-end team)	other	senior
+Senior Engineering Manager (Frontend)	front	lead
+Senior Frontend Developer	front	senior
+Senior Frontend Developer (React / Next.js)	front	senior
+Senior Frontend Developer (React, Next.js)	front	senior
+Senior Frontend Developer (VUE3)	front	senior
+Senior Frontend Developer — Next.js / TypeScript	front	senior
+Senior Frontend Engineer (Angular)	front	senior
+Senior Frontend Engineer (React TypeScript)	front	senior
+Senior Frontend Engineer (Vue)	front	senior
+Senior Frontend developer (React)	front	senior
+Senior Frontend-разработчик (AI Agent / SDLC Automation)	front	senior
+Senior Frontend-разработчик (React / TypeScript)	front	senior
+Senior Frontend-разработчик (React)	front	senior
+Senior Frontend-разработчик (Vue3)	front	senior
+Senior Frontend-разработчик Angular	front	senior
+Senior Full - stack QA инженер	qa	senior
+Senior Full Stack Analyst (Системный и бизнес-анализ, AI-first)	nontech	senior
+Senior Full Stack Developer	fullstack	senior
+Senior Full Stack Developer — React и Node.js	fullstack	senior
+Senior Full Stack PHP-разработчик	fullstack_other	senior
+Senior Full Stack QA Engineer (в Йошкар-Олу)	qa	senior
+Senior Full-Stack Developer	fullstack	senior
+Senior Full-Stack Developer (AI Telecom)	fullstack	senior
+Senior Full-Stack Developer (IoT / Real-Time Systems)	fullstack	senior
+Senior Full-Stack Developer / Tech Lead	fullstack	lead
+Senior Full-Stack Engineer	fullstack	senior
+Senior Full-Stack Engineer (React / Node.js / TypeScript)	fullstack	senior
+Senior Full-Stack JavaScript Developer	fullstack	senior
+Senior Full-Stack Software Engineer (Go & React)	fullstack	senior
+Senior Full-Stack разработчик (Java/React)	fullstack	senior
+Senior Full-stack Developer (Python, React)	fullstack	senior
+Senior Full-stack Developer (React Native/Node)	mobile	senior
+Senior Full-stack разработчик (Go / TypeScript / PHP)	fullstack	senior
+Senior FullStack Developer (1С / JavaScript)	fullstack	senior
+Senior FullStack Engineer (Backend-focused)	fullstack	senior
+Senior Fullstack Analyst (Системный и бизнес-анализ)	nontech	senior
+Senior Fullstack C# / Angular Developer в офис производственной компании	fullstack	senior
+Senior Fullstack Developer	fullstack	senior
+Senior Fullstack Developer (.NET / React)	fullstack	senior
+Senior Fullstack Developer / AI-Native Engineer Node.js / TypeScript / React	fullstack	senior
+Senior Fullstack PHP Developer (OpenCart / Symfony / Legacy)	fullstack_other	senior
+Senior Fullstack QA (Python)/Тестировщик	qa	senior
+Senior Fullstack QA инженер	qa	senior
+Senior Fullstack QA инженер (TypeScript)	qa	senior
+Senior Fullstack Web-разработчик (PHP / Node.js / Go / Python)	fullstack	senior
+Senior Fullstack developer/Веб-разработчик	fullstack	senior
+Senior Fullstack разработчик (PL SQL / Oracle +React)	fullstack	senior
+Senior Fullstack-разработчик	fullstack	senior
+Senior Fullstack-разработчик (Go/Java + Angular/React)	fullstack	senior
+Senior Fullstack-разработчик (Growth-команда / MVP)	fullstack	senior
+Senior Fullstack-разработчик (Laravel + Nuxt)	fullstack	senior
+Senior Fullstack-разработчик (Python + React, Nodejs)	fullstack	senior
+Senior Fullstack-разработчик (Python/FastAPI + AI)	fullstack_other	senior
+Senior Java + Angular разработчик	fullstack	senior
+Senior ML Engineer Pricing | Старший инженер по машинному обучению, Прайсинг	other	senior
+Senior ML Engineer, Content | Старший инженер по машинному обучению, Контент	other	senior
+Senior Mobile Developer (React Native)	mobile	senior
+Senior Node.JS Developer	backend	senior
+Senior Node.js (TechLead)	backend	lead
+Senior QA / Технический лидер тестирования (Manual + Auto, JS/TS)	qa	senior
+Senior QA Engineer (Full Stack)	qa	senior
+Senior QA Fullstack Engineer (Java)	qa	senior
+Senior QA Fullstack Engineer (Python)	qa	senior
+Senior QA engineer(fullstack)	qa	senior
+Senior React Developer	front	senior
+Senior React Native Developer	mobile	senior
+Senior React Native Engineer / Senior Mobile Product Engineer	mobile	senior
+Senior System Analyst / Fullstack Analyst	nontech	senior
+Senior backend-разработчик TypeScript	backend	senior
+Senior frontend developer (AI-first)	front	senior
+Senior frontend developer (TS/JS)	front	senior
+Senior frontend разработчик (React)	front	senior
+Senior fullstack QA	qa	senior
+Senior fullstack developer в GigaCode (AI Developer Platform)	fullstack	senior
+Senior fullstack аналитик (блок стратегии)	nontech	senior
+Senior fullstack разработчик (java/kotlin+angular)	fullstack	senior
+Senior Разработчик на проекты IoT устройств — Node/NestJS, RTMP/WebRTC video, ML	backend	senior
+Senior+ Full-Stack Developer (React / .NET)	fullstack	senior
+Senior-разработчик (.NET / Node.js)	backend	senior
+Senior/Lead QA Engineer (AI/LLM Products)	qa	lead
+Senior/Lead Web-developer	web	lead
+Senior_Middle+ Frontend Developer (React)	front	senior
+Sole Senior Fullstack QA Engineer (тестировщик)	qa	senior
+Staff Fullstack/Backend Engineer	fullstack	-
+Strong Middle AI-Native SDET	qa	middle
+Team Lead (Fullstack: PHP8.3+React)	fullstack	lead
+Tech Lead (Node.js · NestJS)	backend	lead
+Tech Lead Full-Stack Developer	fullstack	lead
+Trainee\Junior JavaScript React программист\React developer	front	junior
+TypeScript Web Fullstack Developer	fullstack	-
+TypeScript-разработчик	front	-
+UI- разработчик Middle+/Senior (SAPUI5/ OpenUI5)	front	senior
+UX/UI разработчик / Frontend Engineer	front	-
+Vue.js Frontend Разработчик	front	-
+WEB-Программист (в офис)	web	-
+Web Developer / Системный администратор (Bitrix24, Zapier, WordPress)	other	-
+Web программист PHP / React	fullstack	-
+Web программист/Bitrix программист	other	-
+Web разработчик	web	-
+Web разработчик (react, node.js)	fullstack	-
+Web-дизайнер (Wordpress) + Vibe Coding promter	nontech	-
+Web-программист	web	-
+Web-программист / PHP-разработчик (строго CS-Cart, Linux)	web	-
+Web-программист / Web-разработчик	web	-
+Web-разработчик	web	-
+Web-разработчик (в офис г. Тула)	web	-
+Web-разработчик back-end C#	backend	-
+Администратор-разработчик сайта (1С-Битрикс)	other	-
+Аналитик (full-stack)	nontech	-
+Аналитик AI-решений / AI -инженер	nontech	-
+Аналитик данных (LLM платформа)	nontech	-
+Аналитик спортивных событий / Спортивный трейдер (с поддержкой ИИ и разработчиков)	nontech	-
+Аналитик-инженер по машинному обучению	nontech	-
+Аналитик-разработчик AI-систем	nontech	-
+Бизнес / Системный аналитик (AI-native)	nontech	-
+Бизнес-аналитик (LLM, OCR)	nontech	-
+Бизнес-аналитик (fullstack)	nontech	-
+Бизнес/системный аналитик (Full-stack)	nontech	-
+Бэкенд-разработчик (Node.js)	backend	-
+Веб программист	web	-
+Веб разработчик / PHP разработчик	web	-
+Веб-дизайнер AI-first	nontech	-
+Веб-программист 1С-Битрикс	other	-
+Веб-программист Drupal	other	-
+Веб-программист Битрикс	other	-
+Веб-разработчик	web	-
+Веб-разработчик (1С-Битрикс)	other	-
+Веб-разработчик (PHP)	web	-
+Веб-разработчик (Битрикс24)	other	-
+Веб-разработчик 1С-Битрикс / программист интернет-магазина	other	-
+Веб-разработчик Bitrix24	other	-
+Веб-разработчик в интернет-магазин автозапчастей	web	-
+Веб-разработчик на 1С Битрикс	other	-
+Ведущий Web разработчик	web	senior
+Ведущий fullstack аналитик (B2G)	nontech	senior
+Ведущий аналитик B2G (Fullstack)	nontech	senior
+Ведущий бизнес/системный аналитик (Fullstack)	nontech	senior
+Ведущий инженер по машинному обучению и компьютерному зрению	other	senior
+Ведущий инженер по тестированию (fullstack, Java)	qa	senior
+Ведущий инженер-программист Web приложений\сервисов.	web	senior
+Ведущий разработчик AI-агентов (.NET fullstack)	fullstack_other	senior
+Ведущий разработчик C# (Full Stack, ASP. NET) в г. Иннополис	fullstack_other	senior
+Ведущий системный аналитик (AI/LLM-интеграции)	nontech	senior
+Ведущий системный инженер (Fullstack & Embedded)	other	senior
+Ведущий фуллстек разработчик (Python + Vue 3)	fullstack	senior
+Дизайнер Fullstack	nontech	-
+ИИ-специалист: конверсия сайта, веб-аналитика	nontech	-
+Инженер (разработчик веб-приложений)	web	-
+Инженер DWH (ETL, LLM, DevOps)	other	-
+Инженер по автоматизации тестирования (Go, Typescript), Ozon fresh	qa	-
+Инженер по автоматизации тестирования (TypeScript, Web), Ozon Банк	qa	-
+Инженер по автоматизированному тестированию (Fullstack QA Java)	qa	-
+Инженер по внедрению LLM/Ведущий системный аналитик	nontech	senior
+Инженер по машинному обучению	other	-
+Инженер по машинному обучению/Центр компетенций в сфере искусственного интеллекта	other	-
+Инженер-автотестировщик на JS ( не python)	qa	-
+Инженер-программист full stack developer	fullstack	-
+Инженер-программист робототехнических комплексов (Node.js / TypeScript / Python)	backend	-
+Инженер-разработчик (Full‑Stack DevOps)	fullstack	-
+Инженер-разработчик полного цикла (Python, AI-driven development)	fullstack_other	-
+Машинист гусеничного экскаватора (JCB JS 260 и JCB JS 305)	other	-
+Менеджер по оптимизации бизнес-процессов / AI & Vibe Coding	nontech	-
+Менеджер по продукту AI ассистент в личном кабинете продавца, LLM	nontech	-
+Ментор Fullstack (Node.js)	nontech	-
+Младший PHP программист / разработчик сайтов	other	junior
+Младший fullstack-аналитик (Нижний Новгород)	nontech	junior
+Младший веб-разработчик (Fullstack)	fullstack	junior
+Младший веб-разработчик (SEO)	web	junior
+Мобильный разработчик React Native (Middle)	mobile	middle
+Наставник курса «AI-инженер» в Практикум	nontech	-
+Начинающий full-stack разработчик	fullstack	-
+Начинающий Веб программист (Junior Web-разработчик, в офисе)	web	junior
+Преподаватель IT дисциплин в колледже (Python, С++, C#, WEB, javascript)	nontech	-
+Преподаватель по направлению Разработчик веб и мультимедийных приложений	nontech	-
+Преподаватель по специальности разработчик WEB и мультимедийных приложений	nontech	-
+Программист .net (C#, ASP.NET Core, MSSQL, Javascript)	other	-
+Программист / Веб-разработчик на WordPress (Web - разработчик)	other	-
+Программист Bitrix Framework / Fullstack веб-разработчик	fullstack_other	-
+Программист C#, JS, C++	other	-
+Программист Fullstack	fullstack	-
+Программист в веб-студию (по работе с WordPress, кодом)	other	-
+Программист на Laravel, Vue.js	fullstack	-
+Программист-разработчик (FrontEnd)	front	-
+Программист-разработчик (Vue.js / C#)	fullstack	-
+Продуктовый дизайнер AI Native (Senior)	nontech	senior
+Разработчик (Fullstack) на 1С‑Битрикс (D7) + API интеграции	fullstack_other	-
+Разработчик (Node.JS) / Middle Backend Developer	backend	middle
+Разработчик (Фронтенд / Vue.js) Middle+	front	middle
+Разработчик / Senior / Middle Fullstack C# Developer (ASP.NET, DBML)	fullstack_other	senior
+Разработчик / Вебмастер / WordPress / Full stack	fullstack_other	-
+Разработчик / интегратор Битрикс24 (vibe-coding)	other	-
+Разработчик 1С-Битрикс / Full-stack разработчик (Middle+/Senior)	fullstack_other	senior
+Разработчик Angular	front	-
+Разработчик Angular (Ionic + Capacitor)	front	-
+Разработчик Angular frontend	front	-
+Разработчик Full Stack (Vue 3 + C++ / Python)	fullstack	-
+Разработчик Fullstack (C#, C++, NanoCAD API/SDK)	fullstack_other	-
+Разработчик Fullstack C# .NET Core / Angular	fullstack	-
+Разработчик JavaScript	front	-
+Разработчик Node.js	backend	-
+Разработчик Python/FastAPI + React/TypeScript	fullstack	-
+Разработчик React	front	-
+Разработчик React Native	mobile	-
+Разработчик WEB (PHP / Java / Frontend)	fullstack	-
+Разработчик fullstack	fullstack	-
+Разработчик в продуктовую команду (Fullstack / Backend-first)	fullstack	-
+Разработчик веб приложений (3D/2D)	web	-
+Разработчик веб-продукта (Middle / Middle+)	web	middle
+Разработчик внутренних систем (full-stack, AI)	fullstack	-
+Разработчик сайта / Администратор сайта	other	-
+Разработчик сайтов (Tilda/WordPress/Битрикс)	other	-
+Разработчик сайтов WordPress / Верстальщик	other	-
+Разработчик сайтов на 1С-Битрикс	other	-
+Руководитель Frontend-разработки	front	lead
+Руководитель группы QA (Manual + Auto, JS/TS)	qa	lead
+Руководитель группы разработки (Backend / Fullstack) / Team Lead	fullstack	lead
+Руководитель группы разработки (Ведущий Fullstack Developer PHP/JS + DevOps)	fullstack	lead
+Руководитель проектов по внедрению LLM	nontech	lead
+Сетевой инженер / QA Fullstack (Python)	qa	-
+Системный - бизнес аналитик / Fullstack аналитик	nontech	-
+Системный аналитик (AI First / MCP)	nontech	-
+Системный аналитик (AI First/Model Context Protocol)	nontech	-
+Системный аналитик (Fullstack)	nontech	-
+Системный аналитик (fullstack)	nontech	-
+Системный аналитик / Fullstack-аналитик	nontech	-
+Системный аналитик AI-first (АС Пульт)	nontech	-
+Системный инженер / DevOps-инженер по ИИ и IT-автоматизации	other	-
+Системный/Бизнес/Fullstack-аналитик	nontech	-
+Специалист по искусственному интеллекту	other	-
+Стажер Backend / FullStack разработчик	fullstack	junior
+Стажер Frontend-разработчик	front	junior
+Стажер JavaScript Developer	front	junior
+Стажер Node JS	backend	junior
+Стажер frontend разработчик	front	junior
+Стажер разработчик интерфейсов (Frontend), Ozon Банк	front	junior
+Стажер фронтенд разработчик в стартап проект	front	junior
+Стажер фронтенд-разработчик (fast track)	front	junior
+Стажер, QA Auto JavaScript, Ozon Bank	qa	junior
+Стажер-Верстальщик (Frontend старт)	front	junior
+Стажер-разработчик (Angular)	front	junior
+Стажер/web-разработчик (программист)	web	junior
+Старший Frontend разработчик (Vue)	front	senior
+Старший Frontend-разработчик (в Офис)	front	senior
+Старший Frontend-разработчик, Система управления ресурсами	front	senior
+Старший Full-stack аналитик / Team Lead аналитиков	nontech	lead
+Старший Fullstack-разработчик (C#+react)	fullstack	senior
+Старший ReactJS/Fullstack (ReactJS/Java) разработчик	fullstack	senior
+Старший Разработчик полного цикла (Python, Golang, React) [МТС Веб Сервисы]	fullstack	senior
+Старший бизнес-аналитик (AI-first)	nontech	senior
+Старший бизнес-аналитик (LLM платформа)	nontech	senior
+Старший инженер по автоматизации тестирования/SDET (JavaScript/TypeScript)	qa	senior
+Старший инженер по машинному обучению	other	senior
+Старший разработчик Python (Fullstack), Группа разработки ядра платформы данных, Ozon Банк	fullstack_other	senior
+Старший системный аналитик / Функциональный архитектор (LLM Platform, ГОСТ)	nontech	lead
+Старший специалист по тестированию (FullStack)	qa	senior
+Старший специалист по тестированию (FullStack/.Net)	qa	senior
+Старший технический менеджер проектов (AI/Fullstack Platform), Ozon Банк	nontech	senior
+Тестировщик (QA fullstack АТ на C#)	qa	-
+Тестировщик Fullstack (АТ Java и manual)	qa	-
+Тестировщик Fullstack (АТ Java)	qa	-
+Технический менеджер продукта (Mobile / React Native)	nontech	-
+Технический руководитель проекта (платформа LLM)	nontech	lead
+Тимлид разработки (C#/.NET + Angular, AI-assisted development )	fullstack	lead
+Фронтенд инженер для разработки десктопных приложений	front	-
+Фронтенд разработчик AI (React)	front	-
+Фронтенд разработчик React	front	-
+Фронтенд-разработчик (reactjs, redux toolkit)	front	-
+Фуллстек-аналитик	nontech	-
+Фуллстек-аналитик / Feature Owner (ALD Pro)	nontech	-
+Фулстек-разработчик	fullstack	-
