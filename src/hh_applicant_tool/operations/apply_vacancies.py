@@ -2308,6 +2308,30 @@ class Operation(BaseOperation):
 
         return params
 
+    def _get_vacancy_solving_captcha(self, vacancy_id: str) -> dict | None:
+        """GET /vacancies/{id}; на каптчу — решить тем же решателем и
+        повторить один раз. None — вакансию взять не удалось."""
+        for attempt in (1, 2):
+            try:
+                return self.api_client.get(f"/vacancies/{vacancy_id}")
+            except CaptchaRequired as ex:
+                if attempt == 2:
+                    logger.warning("Каптча снова на вакансии %s, пропускаю", vacancy_id)
+                    return None
+                logger.warning("Каптча при чтении вакансии %s: %s", vacancy_id, ex.captcha_url)
+                try:
+                    solved = asyncio.run(self._solve_captcha_async(ex.captcha_url))
+                except Exception as err:
+                    logger.error("Ошибка при решении капчи: %s", err)
+                    return None
+                if not solved:
+                    logger.error("Не удалось решить капчу при чтении вакансии %s", vacancy_id)
+                    return None
+            except ApiError as ex:
+                logger.warning("Не смог получить вакансию %s: %s", vacancy_id, ex)
+                return None
+        return None
+
     def _get_rejected_vacancies(
         self, resume_id: str | None = None
     ) -> Iterator[SearchVacancy]:
@@ -2335,6 +2359,11 @@ class Operation(BaseOperation):
                 if (item.get("resume") or {}).get("id") == resume_id:
                     already_applied.add(vacancy_id)
                 if (item.get("state") or {}).get("id") in states:
+                    # Архивные отсекаем по данным отклика, не запрашивая
+                    # вакансию: залп из сотен GET /vacancies ловит каптчу
+                    # уже на чтении (06.10.2026: 546 из 645)
+                    if (item.get("vacancy") or {}).get("archived"):
+                        continue
                     rejected.append(vacancy_id)
             if page >= res.get("pages", 1) - 1:
                 break
@@ -2352,10 +2381,8 @@ class Operation(BaseOperation):
         )
 
         for vacancy_id in todo:
-            try:
-                vacancy = self.api_client.get(f"/vacancies/{vacancy_id}")
-            except ApiError as ex:
-                logger.warning("Не смог получить вакансию %s: %s", vacancy_id, ex)
+            vacancy = self._get_vacancy_solving_captcha(vacancy_id)
+            if vacancy is None:
                 continue
 
             if vacancy.get("archived"):

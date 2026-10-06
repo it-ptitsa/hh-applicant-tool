@@ -76,3 +76,74 @@ def test_negotiations_requested_with_all_statuses():
     op = _op(api, ["discard", "response"])
     _ids(op)
     assert api.neg_params[0].get("status") == "all"
+
+
+# --- нагрузка и каптча при чтении вакансий (прогон 06.10: 546 из 645 GET упёрлись в каптчу)
+
+
+def test_archived_negotiations_are_not_fetched():
+    negs = [
+        {"vacancy": {"id": "1", "archived": True}, "state": {"id": "discard"}, "resume": {"id": "old"}},
+        {"vacancy": {"id": "2", "archived": False}, "state": {"id": "discard"}, "resume": {"id": "old"}},
+    ]
+    fetched = []
+
+    class Api(FakeApi):
+        def get(self, path, params=None):
+            if path != "/negotiations":
+                fetched.append(path)
+            return super().get(path, params)
+
+    api = Api(negs, {"1": _vac("1"), "2": _vac("2")})
+    assert _ids(_op(api)) == ["2"]
+    assert fetched == ["/vacancies/2"]  # архивную по данным отклика даже не запрашиваем
+
+
+def _captcha_error():
+    from hh_applicant_tool.api.errors import CaptchaRequired
+
+    resp = SimpleNamespace(status_code=403, url="https://api.hh.ru/vacancies/2", request=None, headers={})
+    data = {"errors": [{"type": "captcha_required", "value": "captcha_required", "captcha_url": "https://hh.ru/account/captcha?state=x"}]}
+    return CaptchaRequired(resp, data)
+
+
+def test_captcha_on_vacancy_read_is_solved_and_retried():
+    negs = [_neg("2", "discard")]
+    calls = {"n": 0}
+
+    class Api(FakeApi):
+        def get(self, path, params=None):
+            if path == "/vacancies/2":
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    raise _captcha_error()
+            return super().get(path, params)
+
+    op = _op(Api(negs, {"2": _vac("2")}))
+    solved = []
+
+    async def fake_solve(url):
+        solved.append(url)
+        return True
+
+    op._solve_captcha_async = fake_solve
+    assert _ids(op) == ["2"]
+    assert solved == ["https://hh.ru/account/captcha?state=x"] and calls["n"] == 2
+
+
+def test_unsolved_captcha_on_read_skips_vacancy():
+    negs = [_neg("2", "discard"), _neg("3", "discard")]
+
+    class Api(FakeApi):
+        def get(self, path, params=None):
+            if path == "/vacancies/2":
+                raise _captcha_error()
+            return super().get(path, params)
+
+    op = _op(Api(negs, {"2": _vac("2"), "3": _vac("3")}))
+
+    async def fake_solve(url):
+        return False
+
+    op._solve_captcha_async = fake_solve
+    assert _ids(op) == ["3"]
