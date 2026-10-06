@@ -809,7 +809,9 @@ class Store:
                                       (v["name"],)).fetchone()
                 if row is None:
                     continue
-                agree = (row[0], row[1]) == (v["category"], v.get("grade"))
+                # ai / ai_js различаются по требованиям, а не по названию — для сверки это одно
+                norm = lambda c: "ai" if c in ("ai", "ai_js") else c  # noqa: E731
+                agree = (norm(row[0]), row[1]) == (norm(v["category"]), v.get("grade"))
                 self.db.execute("UPDATE title_review SET agent_category = ?, agent_grade = ?, status = ?"
                                 " WHERE name = ?", (v["category"], v.get("grade"),
                                                     "agreed" if agree else "disputed", v["name"]))
@@ -1167,14 +1169,15 @@ def main() -> None:
     parser.add_argument("--review-resolve", type=Path, help="JSON-решения Александра по спорным")
     parser.add_argument("--disputes", action="store_true", help="JSON: спорные названия")
     parser.add_argument("--note", help="отправить текст в бот (вывод недели от агента)")
+    parser.add_argument("--note-file", type=Path, help="отправить в бот текст из файла (UTF-8, HTML)")
     args = parser.parse_args()
     sender = (lambda text: print(text, end="\n\n")) if args.dry_run else send
     store = Store(args.db)
     if args.weekly:
         for m in build_weekly(store, datetime.now(MSK)):
             sender(m)
-    elif args.review_queue:
-        print(json.dumps(store.review_queue(), ensure_ascii=False, indent=1))
+    elif args.review_queue:  # только названия: агент классифицирует независимо, не видя ответа
+        print(json.dumps([q["name"] for q in store.review_queue()], ensure_ascii=False, indent=1))
     elif args.review_submit:
         store.review_submit(json.loads(args.review_submit.read_text()))
         print(json.dumps(store.review_stats(), ensure_ascii=False))
@@ -1185,6 +1188,8 @@ def main() -> None:
         print(json.dumps(store.disputes(), ensure_ascii=False, indent=1))
     elif args.note:
         sender(args.note)
+    elif args.note_file:
+        send(args.note_file.read_text(encoding="utf-8"))
     else:
         run(Api(load_token()), store, send=sender, dry_run=args.dry_run)
 

@@ -812,3 +812,30 @@ def test_review_full_listing_0610(name, category, grade, stack):
 def test_latinize_only_touches_mixed_words():
     assert mm.latinize("Frontend-разработчик (аngular)") == "Frontend-разработчик (angular)"
     assert mm.latinize("Фронтенд-разработчик") == "Фронтенд-разработчик"   # чисто русское слово не трогаем
+
+
+def test_review_ai_vs_ai_js_is_not_a_dispute(tmp_path):
+    """Близость AI к JS решают требования, а не название — по названию агент её не увидит."""
+    store = mm.Store(tmp_path / "market.db")
+    store.record_titles([vac(1, name="Middle AI Engineer", snippet="TypeScript, Node.js")], golden=set(), now=NOW)
+    store.review_submit([{"name": "Middle AI Engineer", "category": "ai", "grade": "middle"}])
+    assert store.review_stats() == {"reviewed": 1, "agreed": 1, "disputed": 0}
+
+
+def test_review_queue_for_agent_hides_auto_answer(tmp_path, capsys, monkeypatch):
+    store = mm.Store(tmp_path / "market.db")
+    store.record_titles([vac(1, name="Странный Front Инженер")], golden=set(), now=NOW)
+    monkeypatch.setattr(sys, "argv", ["mm", "--db", str(tmp_path / "market.db"), "--review-queue"])
+    mm.main()
+    out = capsys.readouterr().out
+    assert "Странный Front Инженер" in out and "auto" not in out and "front" not in out.replace("Front", "")
+
+
+def test_note_file_is_sent(tmp_path, monkeypatch):
+    sent = []
+    monkeypatch.setattr(mm, "send", sent.append)
+    note = tmp_path / "note.txt"
+    note.write_text("💡 <b>Вывод недели</b>: рынок стабилен", encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["mm", "--db", str(tmp_path / "m.db"), "--note-file", str(note)])
+    mm.main()
+    assert sent == ["💡 <b>Вывод недели</b>: рынок стабилен"]
