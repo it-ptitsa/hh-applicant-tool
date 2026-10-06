@@ -66,7 +66,7 @@
 - `operations/test_session.py`: новый формат `"login": ...` и понятное сообщение о веб-сессии — наше.
 - `ai/claude_cli.py` и выбор `provider` в `get_captcha_ai`: каптча по подписке Claude — наше, поверх решателя оригинала.
 - `operations/check_captcha.py` и образцы `data/captcha_samples/` — наше.
-- `apply_vacancies.py`: `_build_cover_letter_message` (сопроводительное), `_get_vacancy_tests` с понятной ошибкой протухшей сессии, `--reapply-rejected`, паузы `--apply-delay-*` — наше; каптча, поиск по тайтлу резюме — оригинала.
+- `apply_vacancies.py`: `_build_cover_letter_message` (сопроводительное), `_get_vacancy_tests` с понятной ошибкой протухшей сессии, `--reapply-rejected` + `--reapply-states` (discard/response), паузы `--apply-delay-*` — наше; каптча, поиск по тайтлу резюме — оригинала.
 
 #### Scenario: Очередная синхронизация
 

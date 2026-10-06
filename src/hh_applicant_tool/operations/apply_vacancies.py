@@ -202,6 +202,12 @@ class Operation(BaseOperation):
             action=argparse.BooleanOptionalAction,
         )
         parser.add_argument(
+            "--reapply-states",
+            help="Статусы прошлых откликов для --reapply-rejected (id из hh): discard — отказ, response — без ответа, invitation — приглашение. По умолчанию discard.",  # noqa: E501
+            nargs="+",
+            default=None,
+        )
+        parser.add_argument(
             "--reapply-experience",
             help="Фильтр по требуемому опыту для --reapply-rejected (id из hh: noExperience, between1And3, between3And6, moreThan6). Можно несколько.",  # noqa: E501
             nargs="+",
@@ -524,6 +530,7 @@ class Operation(BaseOperation):
         self.search_field = args.search_field
         self.reapply_rejected = args.reapply_rejected
         self.reapply_experience = args.reapply_experience
+        self.reapply_states = args.reapply_states
         self.sort_point_lat = args.sort_point_lat
         self.sort_point_lng = args.sort_point_lng
         self.top_lat = args.top_lat
@@ -2304,18 +2311,22 @@ class Operation(BaseOperation):
     def _get_rejected_vacancies(
         self, resume_id: str | None = None
     ) -> Iterator[SearchVacancy]:
-        """Вакансии, по которым РАНЕЕ пришёл отказ (negotiations state=discard).
+        """Вакансии, по которым РАНЕЕ пришёл отказ (negotiations state=discard)
+        или другой статус из --reapply-states (response — без ответа).
         Нужны для переотклика другим резюме (например, отказ по грейду:
         senior-резюме не проходит на middle-вакансию, а middle-версия проходит).
         Вакансии, где уже есть отклик ЭТИМ резюме, пропускаем — чтобы не слать
         дубли."""
         rejected: list[str] = []
         already_applied: set[str] = set()
+        # getattr: Operation без парсера (тесты) флага не знает
+        states = set(getattr(self, "reapply_states", None) or ["discard"])
 
         page = 0
         while True:
             res = self.api_client.get(
-                "/negotiations", {"page": page, "per_page": 100}
+                "/negotiations",
+                {"page": page, "per_page": 100, "status": "all"},
             )
             for item in res.get("items", []):
                 vacancy_id = (item.get("vacancy") or {}).get("id")
@@ -2323,7 +2334,7 @@ class Operation(BaseOperation):
                     continue
                 if (item.get("resume") or {}).get("id") == resume_id:
                     already_applied.add(vacancy_id)
-                if (item.get("state") or {}).get("id") == "discard":
+                if (item.get("state") or {}).get("id") in states:
                     rejected.append(vacancy_id)
             if page >= res.get("pages", 1) - 1:
                 break
