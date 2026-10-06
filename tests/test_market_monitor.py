@@ -619,3 +619,50 @@ def test_live_hh_contract():
     assert {v.category for v in vs} & {"front", "fullstack"}
     detail = api.get(f"/vacancies/{vs[0].id}")
     assert mm.parse_dt(detail["initial_created_at"]) <= vs[0].published_at
+
+
+# ── грейд, лиды, срез JS-рынка (06.10.2026) ─────────────────────────────
+
+
+@pytest.mark.parametrize("name, category, grade", [
+    ("Team Lead Frontend", "front", "lead"),
+    ("Тимлид фронтенд-разработки", "front", "lead"),
+    ("Руководитель frontend-разработки", "front", "lead"),
+    ("Head of Frontend", "front", "lead"),
+    ("Frontend-архитектор", "front", "lead"),
+    ("Engineering Manager (Frontend)", "front", "lead"),
+    ("Tech Lead (Fullstack, Node.js)", "fullstack", "lead"),
+    ("Senior Frontend Developer (React)", "front", "senior"),
+    ("Ведущий frontend-разработчик", "front", "senior"),
+    ("Middle Frontend-разработчик (Vue)", "front", "middle"),
+    ("Junior Frontend Developer", "front", "junior"),
+    ("Стажёр-фронтенд-разработчик", "front", "junior"),
+    ("Frontend-разработчик", "front", None),
+    ("Руководитель проектов (веб)", "nontech", "lead"),
+])
+def test_grade_and_lead_category(name, category, grade):
+    assert mm.classify(name) == category
+    assert mm.grade(name) == grade
+
+
+def test_primary_stack_counts_each_front_vacancy_once():
+    assert vac(1, name="Frontend (React / Angular)").primary_stack == "react"
+    assert vac(2, name="Frontend-разработчик", snippet="Vue 3").primary_stack == "vue"
+    assert vac(3, name="Frontend-разработчик").primary_stack == "js"
+
+
+def test_snapshot_message_sums_and_lines():
+    listing = [
+        vac(1, name="Frontend (React)"), vac(2, name="Team Lead Frontend", snippet="Vue"),
+        vac(3, name="Frontend (AI-native) разработчик"),
+        vac(4, name="Fullstack (React + Node.js)"), vac(5, name="Tech Lead (Fullstack, Node.js)"),
+        vac(6, name="AI-инженер (JS)"), vac(7, name="AQA TypeScript"), vac(8, name="Backend-разработчик (Node.js)"),
+    ]
+    text = mm.build_snapshot_message(listing, NOW)
+    assert "JS-рынок: <b>6</b>" in text                       # 3 фронт + 2 fullstack + 1 AI
+    assert "Фронтенд: <b>3</b>" in text and "лидов 1" in text and "с AI 1" in text
+    assert "React 1" in text and "Vue 1" in text and "Angular 0" in text and "JS/TS без фреймворка 1" in text
+    assert "Fullstack: <b>2</b> · с Node.js 2" in text
+    assert "AI-инженеры на JS/TS: <b>1</b>" in text
+    assert "Москва" not in text and "Россия" not in text      # без городов
+    assert "lead 1" in text or "лиды 1" in text

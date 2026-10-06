@@ -97,6 +97,13 @@ _NON_JS_STACK = re.compile(
     r"|битрикс|bitrix|wordpress|\b1с\b|\b1c\b", re.I)
 _CMS = re.compile(r"битрикс|bitrix|wordpress|\b1с\b|\b1c\b|drupal|opencart|joomla|modx|tilda", re.I)
 _WEB = re.compile(r"веб|web", re.I)
+_LEAD = re.compile(
+    r"team.?lead|тимлид|tech.?lead|техлид|\blead\b|\bлид\b|руководител|head of|engineering manager"
+    r"|архитект|architect", re.I)
+_PM = re.compile(r"руководитель проект|project manager|руководитель отдела продаж", re.I)
+_SENIOR = re.compile(r"senior|старш|ведущ|сеньор|сениор", re.I)
+_MIDDLE = re.compile(r"middle|мидл", re.I)
+_JUNIOR = re.compile(r"junior|младш|джун|стаж|intern|trainee", re.I)
 _AI = re.compile(r"\bai\b|\bии\b|llm|vibe|вайб|prompt|промпт|agentic", re.I)
 _JS_NEAR = re.compile(
     r"front|фронт|react|\bvue|angular|svelte|typescript|javascript|\bjs\b|node|nest|next\.?js"
@@ -117,7 +124,10 @@ def classify(name: str) -> str:
     """Категория вакансии по названию. Порядок важен: QA на TS — это QA, а не фронт."""
     if _QA.search(name):
         return "qa"
-    if _NONTECH.search(name):
+    if _PM.search(name):
+        return "nontech"
+    dev_lead = _LEAD.search(name) and (_FRONT_STRONG.search(name) or _FULLSTACK.search(name) or _BACKEND.search(name))
+    if _NONTECH.search(name) and not dev_lead:  # «Engineering Manager (Frontend)» — это лид фронта
         return "nontech"
     if _MOBILE.search(name):
         return "mobile"
@@ -147,6 +157,19 @@ def classify(name: str) -> str:
     return "other"
 
 
+def grade(name: str) -> str | None:
+    """Грейд по названию; лид проверяется первым — «Senior Team Lead» это лид."""
+    if _LEAD.search(name):
+        return "lead"
+    if _SENIOR.search(name):
+        return "senior"
+    if _MIDDLE.search(name):
+        return "middle"
+    if _JUNIOR.search(name):
+        return "junior"
+    return None
+
+
 # ── модель ──────────────────────────────────────────────────────────────
 
 
@@ -167,6 +190,15 @@ class Vacancy:
     stack: tuple[str, ...] = ()
     node: bool = False
     ai: bool = False
+
+    @property
+    def grade(self) -> str | None:
+        return grade(self.name)
+
+    @property
+    def primary_stack(self) -> str:
+        """Один фреймворк на вакансию — чтобы стек складывался в итог фронта."""
+        return self.stack[0] if self.stack else "js"
 
 
 Closed = tuple  # (id, название, работодатель, категория)
@@ -502,6 +534,41 @@ def build_messages(r: Report) -> list[str]:
         [f"• {_title(n)} — {html.escape(e)}" for _, n, e, _ in f_closed],
     )
     return messages
+
+
+def build_snapshot_message(listing: list[Vacancy], now: datetime) -> str:
+    """Срез JS-рынка по согласованному формату (06.10): строки складываются в итог, без городов."""
+    front = [v for v in listing if v.category == "front"]
+    full = [v for v in listing if v.category == "fullstack"]
+    ai_js = [v for v in listing if v.category == "ai_js"]
+    st = Counter(v.primary_stack for v in front)
+    gr = Counter(v.grade for v in front)
+    leads = lambda vs: sum(v.grade == "lead" for v in vs)  # noqa: E731
+    lines = [
+        f"📊 <b>JS-рынок на hh · {now.astimezone(MSK).strftime('%d.%m.%Y')}</b>",
+        "",
+        f"JS-рынок: <b>{len(front) + len(full) + len(ai_js)}</b>",
+        f"• Фронтенд: <b>{len(front)}</b> · уникальных позиций {unique_positions(front)}"
+        f" · с AI {sum(v.ai for v in front)} · лидов {leads(front)}",
+        f"   ◦ React {st['react']}",
+        f"   ◦ Vue {st['vue']}",
+        f"   ◦ Angular {st['angular']}",
+    ]
+    if st["svelte"]:
+        lines.append(f"   ◦ Svelte {st['svelte']}")
+    lines += [
+        f"   ◦ JS/TS без фреймворка {st['js']}",
+        f"• Fullstack: <b>{len(full)}</b> · с Node.js {sum(v.node for v in full)}"
+        f" · с AI {sum(v.ai for v in full)} · лидов {leads(full)}",
+        f"• AI-инженеры на JS/TS: <b>{len(ai_js)}</b>",
+        "",
+        f"<b>Кого ищут во фронт:</b> лиды {gr['lead']} · senior {gr['senior']} · middle {gr['middle']}"
+        f" · junior/стажёр {gr['junior']} · грейд не указан {gr[None]}",
+        "",
+        "<i>Срез: вакансии с фронт/JS-стеком в названии по всему hh; QA, мобильная разработка и "
+        "fullstack на чужом стеке не входят.</i>",
+    ]
+    return "\n".join(lines)
 
 
 # ── хранилище ───────────────────────────────────────────────────────────
