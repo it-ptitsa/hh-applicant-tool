@@ -847,7 +847,9 @@ def test_note_file_is_sent(tmp_path, monkeypatch):
 @pytest.mark.parametrize("name, category", [
     ("Senior Software Engineer (TypeScript, AI-assisted development)", "front"),  # AI — стиль работы
     ("Веб-разработчик (AI-driven / вайбкодинг)", "web"),
-    ("Senior Backend-разработчик (Node.js / TypeScript, интеграции и AI-агенты)", "ai"),  # AI-агенты — профессия
+    # решение Александра 06.10: роль, явно названная в вакансии, важнее AI-слов — это бэкенд
+    ("Senior Backend-разработчик (Node.js / TypeScript, интеграции и AI-агенты)", "backend"),
+    ("Backend-разработчик (Python, ИИ-платформа)", "backend"),
     ("Python (AI-native) разработчик", "ai"),
     ("Vibe-coder / AI-кодер (Claude, Cursor)", "ai"),
 ])

@@ -196,7 +196,9 @@ def classify(name: str) -> str:
     if _CMS.search(name) and not _FRAMEWORK.search(name):  # «Сайты WordPress / Верстальщик»
         return "other"
     ai_role = _AI.search(_AI_STYLE.sub(" ", name))
-    if _AI.search(name) and not strong and (ai_role or not (_FRONT_LANG.search(name) or _WEB.search(name))):
+    explicit_backend = re.search(r"backend|back-end|бэкенд|бекенд", name, re.I)  # «Backend (…, AI-агенты)»
+    if (_AI.search(name) and not strong and not explicit_backend
+            and (ai_role or not (_FRONT_LANG.search(name) or _WEB.search(name)))):
         return "ai"  # AI-инженер без фронт-слов; рядом ли JS — решит _category
     if backend:  # язык (TypeScript/JavaScript) без явного фронта — бэкенд
         return "backend"
