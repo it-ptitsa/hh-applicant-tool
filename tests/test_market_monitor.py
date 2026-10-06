@@ -144,7 +144,7 @@ def test_missing_roles_fall_back_to_title():
     ("Full-stack аналитик (Business / System)", "nontech"),
     ("UI/UX дизайнер", "nontech"),
     ("Преподаватель по направлению Разработчик веб-приложений", "nontech"),
-    ("Разработчик React Native", "mobile"),
+    ("Разработчик React Native", "front"),  # 06.10: React Native считаем фронтом
     ("Мобильный разработчик (Flutter)", "mobile"),
     ("Fullstack-разработчик (React + Node.js)", "fullstack"),
     ("Full-stack разработчик (Go+React)", "fullstack"),
@@ -174,7 +174,8 @@ def test_classify(name, expected):
 
 
 def test_js_market_categories():
-    assert mm.JS_MARKET == {"front", "fullstack", "backend", "web", "ai_js"}
+    # Node-бэкенд и общий «веб-разработчик» в отчёт не входят (решение 06.10)
+    assert mm.JS_MARKET == {"front", "fullstack", "ai_js"}
     assert "fullstack_other" not in mm.JS_MARKET  # fullstack на .NET/Java/PHP — не JS-рынок
 
 
@@ -246,217 +247,246 @@ def test_ai_query_is_restricted_and_clean():
     assert "llm" in mm.AI_QUERY and '"ai engineer"' in mm.AI_QUERY
 
 
-# ── окно и классификация по возрасту ────────────────────────────────────
+# ── v4: возраст по номеру вакансии (без детальных карточек) ─────────────
+#
+# Номера вакансий hh растут вместе с датой создания (0 нарушений на 166 карточках).
+# Опорные точки «номер → время» берутся из поиска: максимальный номер среди опубликованных
+# за час. Бэктест 06.10 на 166 карточках: новые 97/97, поднятые 48/48, ошибок 0.
+
+EPOCH = datetime(2026, 1, 1, tzinfo=MSK)
 
 
-def test_first_run_window_is_last_24h():
-    assert mm.window_start(None, NOW) == NOW - timedelta(hours=24)
+def id_at(dt: datetime) -> int:
+    """Модель нумерации hh для тестов: один номер в минуту."""
+    return 100_000_000 + int((dt - EPOCH).total_seconds() // 60)
 
 
-def test_next_run_window_starts_at_previous_run():
-    assert mm.window_start(PREV_RUN, NOW) == PREV_RUN
+def at(s: str) -> datetime:
+    return mm.parse_dt(s)
 
 
-def test_candidates_are_published_inside_window():
-    vs = [vac(1, published="2026-10-05T09:00:00+0300"), vac(2, published="2026-10-05T07:59:00+0300")]
-    assert [v.id for v in mm.candidates(vs, PREV_RUN)] == ["1"]
+def anchors_daily(days=40, until=NOW):
+    return mm.Anchors([(id_at(until - timedelta(days=d)), until - timedelta(days=d)) for d in range(days + 1)])
 
 
-def test_split_by_age_new_bumped_reopened():
-    new = vac(1, published="2026-10-05T10:00:00+0300")
-    bumped = vac(2, published="2026-10-05T11:00:00+0300")
-    reopened = vac(3, published="2026-10-05T12:00:00+0300")
-    unknown = vac(4, published="2026-10-05T13:00:00+0300")
-    initial = {
-        "1": mm.parse_dt("2026-10-05T10:00:00+0300"),
-        "2": mm.parse_dt("2026-10-02T11:00:00+0300"),  # 3 дня — поднятие
-        "3": mm.parse_dt("2026-08-21T12:00:00+0300"),  # 45 дней — переоткрытие
-    }
-    n, b, r = mm.split_by_age([new, bumped, reopened, unknown], initial, PREV_RUN)
-    assert [v.id for v in n] == ["1", "4"]  # без карточки — считаем новой
-    assert [(v.id, a) for v, a in b] == [("2", 3)]
-    assert [(v.id, a) for v, a in r] == [("3", 45)]
+def test_anchor_interpolation_recovers_creation_time():
+    a = anchors_daily()
+    created = at("2026-09-20T15:30:00+0300")
+    est = a.created(id_at(created))
+    assert abs((est.estimate - created).total_seconds()) < 120
 
 
-def test_reopen_threshold_is_30_days():
-    v = vac(5, published="2026-10-05T12:00:00+0300")
-    exactly = {"5": mm.parse_dt("2026-09-05T12:00:00+0300")}
-    _, bumped, reopened = mm.split_by_age([v], exactly, PREV_RUN)
-    assert bumped == [] and [(x.id, a) for x, a in reopened] == [("5", 30)]
+@pytest.mark.parametrize("created, published, kind", [
+    ("2026-10-05T12:00:00+0300", "2026-10-05T12:00:00+0300", "new"),
+    ("2026-10-05T02:00:00+0300", "2026-10-05T12:00:00+0300", "new"),       # модерация 10 ч — всё ещё новая
+    ("2026-10-02T12:00:00+0300", "2026-10-05T12:00:00+0300", "bumped"),
+    ("2026-09-05T13:00:00+0300", "2026-10-05T12:00:00+0300", "bumped"),    # 29,96 дня
+    ("2026-09-05T11:00:00+0300", "2026-10-05T12:00:00+0300", "reopened"),  # 30,04 дня
+    ("2026-08-01T12:00:00+0300", "2026-10-05T12:00:00+0300", "reopened"),
+])
+def test_age_kind_by_id(created, published, kind):
+    k, age = mm.age_kind(id_at(at(created)), at(published), anchors_daily(days=70))
+    assert k == kind
 
 
-def test_gone_ids_are_in_previous_snapshot_only():
-    assert sorted(mm.gone_ids({"1", "2", "4"}, [vac(1), vac(3)])) == ["2", "4"]
+def test_older_than_all_anchors_is_reopened_only_when_provably_30_days():
+    a = mm.Anchors([(id_at(at("2026-09-10T13:00:00+0300")), at("2026-09-10T13:00:00+0300"))] * 1
+                   + [(id_at(NOW), NOW)])
+    old = id_at(at("2026-08-01T12:00:00+0300"))
+    assert mm.age_kind(old, at("2026-10-11T14:00:00+0300"), a)[0] == "reopened"  # создана до 10.09 → ≥ 31 дня
+    assert mm.age_kind(old, at("2026-09-20T12:00:00+0300"), a)[0] == "unknown"   # видно лишь «≥ 10 дней»
 
 
-def test_split_gone_closed_vs_hidden():
-    details = {"2": {"archived": True}, "4": {"archived": False}, "5": None}
-    closed, hidden = mm.split_gone(["2", "4", "5"], details)
-    assert sorted(closed) == ["2", "5"]
-    assert hidden == ["4"]
+def test_newer_than_all_anchors_is_new():
+    a = mm.Anchors([(id_at(NOW - timedelta(hours=2)), NOW - timedelta(hours=2))])
+    assert mm.age_kind(id_at(NOW), NOW, a)[0] == "new"
+    stale = mm.Anchors([(id_at(PREV_RUN - timedelta(days=2)), PREV_RUN - timedelta(days=2))])
+    assert mm.age_kind(id_at(NOW), NOW, stale)[0] == "unknown"  # точки устарели — не выдумываем
 
 
-def test_unique_positions_collapses_multi_city_copies():
-    """05.10: Nitka разместила одну позицию в 8 городах подряд идущими id — это 1 позиция."""
-    copies = [vac(i, name="Frontend Developer (React/TypeScript)", employer="Nitka") for i in range(8)]
-    other = [vac(100, name="Frontend Developer (React/TypeScript)", employer="Другая")]
-    assert mm.unique_positions(copies + other) == 2
+def test_anchors_prefer_cards_over_search_on_conflict():
+    """Поиск даёт верхнюю оценку времени; точная дата из карточки важнее, если они спорят."""
+    t0 = at("2026-10-01T13:00:00+0300")
+    a = mm.Anchors([(1000, t0, "search"), (1001, t0 - timedelta(hours=2), "card"), (2000, t0 + timedelta(days=1), "search")])
+    assert a.created(1001).estimate == t0 - timedelta(hours=2)
+    times = [p[1] for p in a.points]
+    assert times == sorted(times)  # точки монотонны
 
 
-def test_summary_shows_unique_positions_when_duplicates():
-    dup = [vac(i, name="Frontend Developer", employer="Nitka") for i in range(5)]
-    text = mm.build_messages(_report(new=dup))[0]
-    assert "Новые: <b>5</b> (уникальных позиций 1)" in text
+def test_anchor_windows_cover_missing_days_only():
+    have = {(NOW - timedelta(days=d)).date().isoformat() for d in (1, 2, 3)}
+    days = mm.missing_anchor_days(NOW, have)
+    assert len(days) == mm.ANCHOR_DAYS - 3
+    assert (NOW - timedelta(days=1)).date() not in days and (NOW - timedelta(days=4)).date() in days
 
 
-def test_top_employers():
-    vs = [vac(i, employer=e) for i, e in enumerate("АБАВАБ")]
-    assert mm.top_employers(vs, 2) == [("А", 3), ("Б", 2)]
+# ── v4: закрытие по трём дням отсутствия ────────────────────────────────
+#
+# 30.09–05.10: из пропавших на 1–2 дня вернулись 47; из пропавших на 3+ дня — ни одна из 53.
 
 
-# ── сводка ──────────────────────────────────────────────────────────────
+def test_closed_after_three_days_absent_hidden_before():
+    d1, d2, d3 = {"1", "2", "3", "4"}, {"1", "3", "4"}, {"1", "4"}
+    today = {"1"}
+    closed, hidden = mm.split_absent([d1, d2, d3], today)
+    assert closed == ["2"]            # нет в d2, d3 и сегодня — три дня подряд
+    assert sorted(hidden) == ["3", "4"]  # пропали 1–2 дня назад — пока «скрыты»
 
 
-def _listing():
-    return [
-        vac(1),                                   # front, Москва
-        vac(2, area="2", remote=True),            # front, СПб, удалёнка
-        vac(3, area="1002"),                      # front, Минск
-        vac(4, name="Fullstack (React + Node)"),  # fullstack
-        vac(5, name="AQA TypeScript"),            # qa — не в JS-рынке
+def test_returned_vacancy_is_neither_closed_nor_hidden():
+    closed, hidden = mm.split_absent([{"1"}, set(), set()], {"1"})
+    assert closed == [] and hidden == []
+
+
+def test_closures_need_three_days_of_history():
+    closed, hidden = mm.split_absent([{"1", "2"}, {"1"}], {"1"})
+    assert closed == [] and hidden == ["2"]
+
+
+# ── v4: пересчёт прошлого снимка текущим классификатором ────────────────
+
+
+def test_recategorize_keeps_role_filter_and_ai_split():
+    assert mm.recategorize("Уборщица в ресторан La Vue", "other", it_role=None) == "other"
+    assert mm.recategorize("Frontend-разработчик", "other", it_role=0) == "other"
+    assert mm.recategorize("JS стажёр", "other", it_role=1) == "front"
+    assert mm.recategorize("Middle AI Engineer", "ai_js", it_role=1) == "ai_js"
+    assert mm.recategorize("Разработчик React Native", "mobile", it_role=1) == "front"
+
+
+# ── v4: React Native во фронте отдельной строкой стека ──────────────────
+
+
+@pytest.mark.parametrize("name, category, stack", [
+    ("React Native Middle Developer", "front", "react_native"),
+    ("React Native разработчик", "front", "react_native"),
+    ("Frontend разработчик (React/React Native)", "front", "react_native"),
+    ("Мобильный разработчик React Native (Middle)", "front", "react_native"),
+    ("Senior Full-stack Developer (React Native/Node)", "fullstack", "react_native"),
+    ("Технический менеджер продукта (Mobile / React Native)", "nontech", "react_native"),
+    ("Flutter (AI native) разработчик", "mobile", "js"),
+    ("Fullstack Mobile Developer", "mobile", "js"),
+])
+def test_react_native_is_front_with_own_stack(name, category, stack):
+    v = vac(50, name=name)
+    assert (v.category, v.primary_stack) == (category, stack)
+
+
+# ── v4: отчёты ──────────────────────────────────────────────────────────
+
+
+def _front(i, name="Frontend-разработчик (React)", employer="Ромашка", **kw):
+    return vac(i, name=name, employer=employer, **kw)
+
+
+def _daily(**kw):
+    listing = [
+        _front(1), _front(2, name="Senior Frontend (Vue)"), _front(3, name="Team Lead Frontend"),
+        _front(4, name="React Native разработчик"), _front(5, name="Frontend-разработчик"),
+        vac(6, name="Fullstack (React + Node.js)"), vac(7, name="Fullstack-разработчик (TypeScript)"),
+        vac(8, name="AI-инженер (JS)"), vac(9, name="AQA TypeScript"), vac(10, name="Backend Node.js"),
     ]
-
-
-def _report(**kw):
-    listing = _listing()
     base = dict(
-        now=NOW, window_start=PREV_RUN, listing=listing, found=len(listing),
-        prev_front=2, prev_js=5,
-        new=[vac(1, name="React <Senior>", employer="Яндекс"), vac(4, name="Fullstack (React + Node)")],
-        bumped=[(vac(2), 3)],
-        reopened=[(vac(3), 45)],
-        closed=[("9", "Frontend", "Озон", "front")],
-        hidden=["8"],
+        now=NOW, window_start=PREV_RUN, listing=listing, found=len(listing), collected=len(listing),
+        prev={"front": 4, "fullstack": 2, "ai_js": 0},
+        new=[(listing[0], 0.1), (listing[3], 0.0), (listing[5], 0.2), (listing[7], 0.0)],
+        bumped=[(listing[1], 3)], reopened=[(listing[2], 45)], unknown=[],
+        closed=[mm.ClosedVacancy("90", "Frontend (Angular)", "Озон", "front", 24)],
+        hidden=[("91", "front"), ("92", "fullstack")], history_days=3,
     )
     base.update(kw)
     return mm.Report(**base)
 
 
-def test_summary_front_counts_and_geography():
-    text = mm.build_messages(_report())[0]
-    assert "Фронтенд: <b>3</b> (+1" in text
-    assert "Россия 2 (Москва 1 · СПб 1) · другие страны 1 · удалёнка 1" in text
-    assert "JS-рынок" in text and "<b>4</b> (-1" in text  # front 3 + fullstack 1; qa не входит
+def test_daily_js_market_block_and_stack_lines():
+    text = mm.build_daily(_daily())[0]
+    assert "<b>JS-рынок: 8</b> (+2 за сутки)" in text      # 5 + 2 + 1; QA и Node-бэкенд не входят
+    assert "• Фронтенд: <b>5</b> (+1)" in text and "лидов 1" in text
+    assert "◦ React 1" in text and "◦ Vue 1" in text and "◦ React Native 1" in text
+    assert "◦ JS/TS без фреймворка 2" in text  # «Team Lead Frontend» и «Frontend-разработчик»
+    assert "• Fullstack: <b>2</b> (0) · с Node.js 1" in text
+    assert "• AI-инженеры на JS/TS: <b>1</b> (+1)" in text
 
 
-def test_summary_front_events_split():
-    text = mm.build_messages(_report())[0]
-    assert "Новые: <b>1</b>" in text           # только фронт; fullstack-новая — в строке JS-рынка
-    assert "Подняли: <b>1</b>" in text
-    assert "Переоткрыли: <b>1</b>" in text and "45 дн." in text
-    assert "Закрыты: <b>1</b>" in text
-    assert "Временно скрыты из поиска: 1" in text
+def test_daily_stack_lines_sum_to_front():
+    text = mm.build_daily(_daily())[0]
+    import re as _re
+    stack = sum(int(x) for x in _re.findall(r"◦ [^\d\n]+ (\d+)", text))
+    assert stack == 5
 
 
-def test_summary_js_market_line():
-    text = mm.build_messages(_report())[0]
-    assert "JS-рынок за то же время: новые 2" in text
+def test_daily_flow_table_by_direction():
+    text = mm.build_daily(_daily())[0]
+    rows = {line.split()[0]: line.split()[1:] for line in text.split("<pre>")[1].split("</pre>")[0].strip().splitlines()[1:]}
+    assert rows["Фронтенд"] == ["2", "1", "1", "1", "+1"]   # новые, подняли, переоткр., закрыты, прирост
+    assert rows["Fullstack"] == ["1", "0", "0", "0", "0"]
+    assert "Временно скрыты из поиска: 2" in text
+    assert "медиана возраста 45 дн." in text and "прожили в среднем 24 дн." in text
 
 
-def _report_mix():
-    listing = [
-        vac(1, name="Frontend (React)"), vac(2, name="Frontend", snippet="Vue 3"),
-        vac(3, name="Frontend (React / Angular)"), vac(4, name="Frontend-разработчик"),
-        vac(5, name="Frontend (AI-native) разработчик"),
-        vac(6, name="Fullstack (React + Node.js)"), vac(7, name="Fullstack", snippet="PHP"),
-        vac(8, name="Fullstack AI Engineer", snippet="Node.js"),
-        vac(9, name="AI-инженер (JS)"), vac(10, name="Senior AI developer (Python)"),
-    ]
-    return _report(listing=listing, found=len(listing), prev_front=None, prev_js=None,
-                   new=[], bumped=[], reopened=[], closed=[], hidden=[])
+def test_daily_closures_placeholder_until_three_days_of_history():
+    text = mm.build_daily(_daily(history_days=1, closed=[]))[0]
+    assert "закрытия появятся" in text
 
 
-def test_summary_front_stack_line():
-    text = mm.build_messages(_report_mix())[0]
-    assert "Стек фронта: React 1 · Vue 1 · Angular 0 · Svelte 0 · несколько 1 · не указан 2" in text
+def test_daily_who_came_without_salaries_with_leads():
+    text = mm.build_daily(_daily())[0]
+    block = text.split("Кто пришёл во фронт")[1]
+    assert "React 1 · React Native 1" in block
+    assert "Грейд: лиды 0 · senior 0 · middle 0 · junior/стажёр 0 · не указан 2" in block
+    assert "₽" not in text and "зарплат" not in text.lower()
 
 
-def test_summary_fullstack_with_node():
-    text = mm.build_messages(_report_mix())[0]
-    assert "Fullstack: <b>3</b> · с Node.js 2" in text
+def test_daily_new_front_list_block():
+    msgs = mm.build_daily(_daily())
+    assert any("🆕 <b>Новые во фронте</b> (2)" in m for m in msgs)
 
 
-def test_summary_ai_block():
-    text = mm.build_messages(_report_mix())[0]
-    assert "AI ближе к фронту: <b>3</b>" in text
-    assert "фронт с AI 1 · fullstack с AI 1 · AI-инженеры на JS/TS 1" in text
-    assert "всего AI-вакансий в IT: 4" in text
+def test_daily_has_no_cities():
+    text = "\n".join(mm.build_daily(_daily()))
+    assert "Москва" not in text and "СПб" not in text and "Россия" not in text
 
 
-def test_first_run_has_no_delta():
-    text = mm.build_messages(_report(prev_front=None, prev_js=None))[0]
-    assert "первый снимок" in text
+def test_checks_pass_footer():
+    text = mm.build_daily(_daily())[0]
+    assert "✅ Проверки пройдены" in text and "Не пересылать" not in text
 
 
-def test_cap_warning_when_hh_hides_tail():
-    text = mm.build_messages(_report(found=2500))[0]
-    assert "2000" in text
+@pytest.mark.parametrize("kw, reason", [
+    (dict(found=2500, collected=2000), "2000"),
+    (dict(collected=5, found=10), "собрано 5 из 10"),
+    (dict(prev={"front": 100, "fullstack": 2, "ai_js": 0}), "Фронтенд"),
+    (dict(unknown=[vac(77)]), "возраст"),
+])
+def test_checks_fail_loudly(kw, reason):
+    text = mm.build_daily(_daily(**kw))[0]
+    assert text.startswith("⚠️ <b>Не пересылать") and reason in text
 
 
-def test_html_in_titles_is_escaped():
-    joined = "\n".join(mm.build_messages(_report()))
-    assert "React &lt;Senior&gt;" in joined and "<Senior>" not in joined
+def test_first_day_has_no_deltas():
+    text = mm.build_daily(_daily(prev=None))[0]
+    assert "<b>JS-рынок: 8</b>\n" in text and "Первый снимок" in text
 
 
-def test_every_message_fits_telegram_limit():
-    many = [vac(i, name="Очень длинное название фронтенд " * 3) for i in range(300)]
-    msgs = mm.build_messages(_report(new=many, reopened=[(v, 40) for v in many]))
-    assert len(msgs) > 2
+def test_daily_messages_fit_telegram_and_escape_html():
+    many = [(_front(1000 + i, name="Frontend <React> " * 5), 0.0) for i in range(300)]
+    msgs = mm.build_daily(_daily(new=many))
     assert all(len(m) <= mm.TG_MESSAGE_LIMIT for m in msgs)
     assert all(m.count("<blockquote") == m.count("</blockquote>") for m in msgs)
+    assert "&lt;React&gt;" in "\n".join(msgs)
 
 
-# ── хранилище: настоящая SQLite ─────────────────────────────────────────
-
-
-def test_store_roundtrip(tmp_path):
-    store = mm.Store(tmp_path / "market_v2.db")
-    assert store.last_run() is None
-    rid = store.save_run(_report(), _listing())
-    store.save_initial({"1": mm.parse_dt("2026-09-01T10:00:00+0300")})
-
-    reopened = mm.Store(tmp_path / "market_v2.db")
-    last = reopened.last_run()
-    assert last.id == rid and last.run_at == NOW
-    assert last.front_total == 3 and last.js_total == 4
-    assert reopened.snapshot_ids(rid) == {"1", "2", "3", "4", "5"}
-    assert reopened.snapshot_titles(rid, ["4"]) == {"4": ("Fullstack (React + Node)", "ООО Ромашка", "fullstack")}
-    assert reopened.cached_initial(["1", "2"]) == {"1": mm.parse_dt("2026-09-01T10:00:00+0300")}
-
-
-def test_store_migrates_old_v2_schema(tmp_path):
-    """market_v2.db на проде создан без колонок stack/node/ai — открытие не должно падать."""
-    import sqlite3
-    path = tmp_path / "market_v2.db"
-    db = sqlite3.connect(path)
-    db.execute("CREATE TABLE snapshot (run_id INTEGER, vacancy_id TEXT, name TEXT, employer TEXT, category TEXT,"
-               " area_id TEXT, country_id TEXT, remote INTEGER, published_at TEXT, salary_from INTEGER,"
-               " salary_to INTEGER, currency TEXT, PRIMARY KEY (run_id, vacancy_id))")
-    db.commit(); db.close()
-    store = mm.Store(path)
-    rid = store.save_run(_report(), _listing())
-    assert store.snapshot_ids(rid) == {"1", "2", "3", "4", "5"}
-
-
-# ── сквозной run(): фейковый API hh, настоящая SQLite, перехват Telegram ─
+# ── v4: хранилище и сквозной прогон ─────────────────────────────────────
 
 
 class FakeApi:
-    """Отвечает как API hh: /areas, постраничный поиск, детальные карточки, 404 для удалённых."""
+    """Как API hh: справочники, постраничный поиск по запросам и «якорный» поиск без текста.
 
-    def __init__(self, listing, details, extra=None):
-        self.listing, self.details, self.calls = listing, details, []
-        self.extra = extra or {}
+    Детальных карточек больше нет — любой запрос к /vacancies/{id} валит тест.
+    """
+
+    def __init__(self, listing, extra=None):
+        self.listing, self.extra, self.calls = listing, extra or {}, []
 
     def get(self, path, **params):
         self.calls.append((path, params))
@@ -464,123 +494,99 @@ class FakeApi:
             return AREAS
         if path == "/professional_roles":
             return PROF_ROLES
-        if path == "/vacancies":
-            assert "area" not in params, "собираем весь hh, без фильтра по стране"
-            if params.get("text") == mm.AI_QUERY:
-                assert params.get("professional_role"), "AI-запрос только по IT-ролям"
-            src = self.listing if params.get("text") == mm.QUERY else self.extra.get(params.get("text"), [])
-            page, per = params.get("page", 0), params.get("per_page", 100)
-            pages = max(1, -(-len(src) // per))
-            return {"items": src[page * per:(page + 1) * per], "found": len(src), "pages": pages, "page": page}
-        vid = path.rsplit("/", 1)[-1]
-        if vid not in self.details:
-            resp = requests.Response()
-            resp.status_code = 404
-            raise requests.HTTPError("404", response=resp)
-        return self.details[vid]
+        assert path == "/vacancies", f"карточки не запрашиваем: {path}"
+        assert "area" not in params, "собираем весь hh, без фильтра по стране"
+        if "text" not in params:  # якорь: самый свежий номер в окне публикации
+            end = datetime.fromisoformat(params["date_to"]) if "date_to" in params else self.now
+            return {"items": [{"id": str(id_at(end - timedelta(minutes=1)))}], "found": 1, "pages": 1}
+        if params.get("text") == mm.AI_QUERY:
+            assert params.get("professional_role"), "AI-запрос только по IT-ролям"
+        # 06.10: при сортировке по релевантности страницы hh повторяются — из 888 собиралось 731
+        assert params.get("order_by") == "publication_time", "листать только по дате публикации"
+        src = self.listing if params["text"] == mm.QUERY else self.extra.get(params["text"], [])
+        page, per = params.get("page", 0), params.get("per_page", 100)
+        return {"items": src[page * per:(page + 1) * per], "found": len(src), "pages": max(1, -(-len(src) // per))}
 
 
-def test_run_two_days_end_to_end(tmp_path):
-    store = mm.Store(tmp_path / "market_v2.db")
+def _day(api_listing, now, store, sent, extra=None):
+    api = FakeApi(api_listing, extra)
+    api.now = now
+    mm.run(api, store, now=now, send=sent.append, sleep=lambda s: None)
+    return api
+
+
+def _it(created: str, published: str | None = None, **kw):
+    c = at(created)
+    return item(id_at(c), published=(published or created), **kw)
+
+
+def test_run_four_days_end_to_end(tmp_path):
+    store = mm.Store(tmp_path / "market.db")
     sent = []
-    old = {"initial_created_at": "2026-08-01T10:00:00+0300"}
+    keep = _it("2026-10-01T10:00:00+0300", name="Frontend (Vue)")
+    flick = _it("2026-10-01T11:00:00+0300", name="Frontend (Angular)")
+    gone = _it("2026-10-01T12:00:00+0300", name="Frontend (React)", employer="Озон")
+    d1 = datetime(2026, 10, 3, 8, 0, tzinfo=MSK)
+    api = _day([keep, flick, gone], d1, store, sent)
+    assert "Первый снимок" in sent[0]
+    assert len([c for c in api.calls if c[0] == "/vacancies" and "text" not in c[1]]) == mm.ANCHOR_DAYS + 1  # 31 день + «сейчас»
 
-    day1 = [item(1, published="2026-10-05T07:00:00+0300"), item(2), item(3), item(6, name="AQA TypeScript")]
-    mm.run(FakeApi(day1, {k: old for k in "1236"}), store, now=PREV_RUN, send=sent.append, sleep=lambda s: None)
-    assert "первый снимок" in sent[0]
-
-    # день 2: 1 осталась · 2 закрыта · 3 мигнула · 4 новая · 5 поднятая · 7 переоткрытая · 8 новый fullstack
-    day2 = [
-        item(1, published="2026-10-05T07:00:00+0300"),
-        item(4, published="2026-10-05T12:00:00+0300", remote=True),
-        item(5, published="2026-10-05T13:00:00+0300", area="2"),
-        item(7, published="2026-10-05T14:00:00+0300", area="1002"),
-        item(8, name="Fullstack (React + Node.js)", published="2026-10-05T15:00:00+0300"),
-        item(6, name="AQA TypeScript", published="2026-10-05T07:00:00+0300"),
-    ]
-    details = {
-        "2": {"archived": True},
-        "3": {"archived": False},
-        "4": {"initial_created_at": "2026-10-05T12:00:00+0300"},
-        "5": {"initial_created_at": "2026-10-02T13:00:00+0300"},
-        "7": {"initial_created_at": "2026-08-21T14:00:00+0300"},
-        "8": {"initial_created_at": "2026-10-05T15:00:00+0300"},
-    }
-    extra = {
-        mm.AI_QUERY: [item(20, name="AI-инженер (JS)", published="2026-10-05T07:00:00+0300"),
-                      item(21, name="Senior AI developer (Python)", published="2026-10-05T07:00:00+0300")],
-        mm.FULL_NODE_QUERY: [item(8, name="Fullstack (React + Node.js)", published="2026-10-05T15:00:00+0300")],
-    }
-    api = FakeApi(day2, details, extra)
+    # день 2: flick мигнул, gone пропал; новая, поднятая (3 дня) и переоткрытая (45 дней) вакансии
+    new = _it("2026-10-03T12:00:00+0300", name="Senior React Developer", employer="Сбер")
+    bumped = _it("2026-09-30T12:00:00+0300", "2026-10-03T13:00:00+0300", name="Frontend (Vue)")
+    reopened = _it("2026-08-19T12:00:00+0300", "2026-10-03T14:00:00+0300", name="Team Lead Frontend")
+    store.save_anchors([(id_at(at("2026-08-19T12:00:00+0300")) - 10, at("2026-08-19T11:50:00+0300"), "card")])
+    d2 = datetime(2026, 10, 4, 8, 0, tzinfo=MSK)
     sent.clear()
-    mm.run(api, store, now=NOW, send=sent.append, sleep=lambda s: None)
+    api = _day([keep, new, bumped, reopened], d2, store, sent)
+    assert len([c for c in api.calls if c[0] == "/vacancies" and "text" not in c[1]]) == 2  # докачан лишь вчерашний день + «сейчас»
+    rows = {l.split()[0]: l.split()[1:] for l in sent[0].split("<pre>")[1].split("</pre>")[0].strip().splitlines()[1:]}
+    assert rows["Фронтенд"][:3] == ["1", "1", "1"]
+    assert "Временно скрыты из поиска: 2" in sent[0] and "закрытия появятся" in sent[0]
 
-    s = sent[0]
-    assert "Фронтенд: <b>4</b> (+1" in s                 # 1, 4, 5, 7 (было 1, 2, 3)
-    assert "Новые: <b>1</b>" in s                        # 4
-    assert "Подняли: <b>1</b>" in s                      # 5, 3 дня
-    assert "Переоткрыли: <b>1</b>" in s and "45 дн." in s  # 7
-    assert "Закрыты: <b>1</b>" in s                      # 2
-    assert "Временно скрыты из поиска: 1" in s           # 3
-    assert "Россия 3 (Москва 2 · СПб 1) · другие страны 1 · удалёнка 1" in s
-    assert "JS-рынок за то же время: новые 2" in s       # 4 и fullstack 8
+    d3 = datetime(2026, 10, 5, 8, 0, tzinfo=MSK)
+    sent.clear()
+    _day([keep, flick, new, bumped, reopened], d3, store, sent)  # flick вернулся
+    assert "Временно скрыты из поиска: 1" in sent[0]
 
-    detail_paths = [p for p, _ in api.calls if p.startswith("/vacancies/")]
-    assert "/vacancies/1" not in detail_paths  # вне окна — карточка не нужна
-    last = store.last_run()
-    assert "Fullstack: <b>1</b> · с Node.js 1" in s
-    assert "AI-инженеры на JS/TS 1" in s and "всего AI-вакансий в IT: 2" in s
-    assert last.run_at == NOW and last.front_total == 4 and last.js_total == 6  # + ai_js
-
-
-def _http_error(status, body):
-    resp = requests.Response()
-    resp.status_code = status
-    resp._content = body.encode()
-    return requests.HTTPError(str(status), response=resp)
+    d4 = datetime(2026, 10, 6, 8, 0, tzinfo=MSK)
+    sent.clear()
+    _day([keep, flick, new, bumped, reopened], d4, store, sent)
+    rows = {l.split()[0]: l.split()[1:] for l in sent[0].split("<pre>")[1].split("</pre>")[0].strip().splitlines()[1:]}
+    assert rows["Фронтенд"][3] == "1"  # gone: нет 3 дня подряд — закрыта; flick — нет
+    assert "прожили в среднем" in sent[0]
+    assert store.last_run().front_total == 5
 
 
-class CaptchaApi(FakeApi):
-    """05.10.2026: поиск отвечает, а карточки — 403 captcha_required на весь аккаунт."""
+def test_review_queue_and_overrides(tmp_path):
+    store = mm.Store(tmp_path / "market.db")
+    store.record_titles([vac(1, name="Странный Front Инженер"), vac(2, name="Frontend-разработчик (React)")],
+                        golden={"Frontend-разработчик (React)"}, now=NOW)
+    queue = store.review_queue()
+    assert [q["name"] for q in queue] == ["Странный Front Инженер"]
+    store.review_submit([{"name": "Странный Front Инженер", "category": "other", "grade": None}])
+    assert store.review_stats() == {"reviewed": 1, "agreed": 0, "disputed": 1}
+    store.review_resolve([{"name": "Странный Front Инженер", "category": "other", "grade": None}])
+    fixed = store.apply_overrides([vac(1, name="Странный Front Инженер")])
+    assert fixed[0].category == "other"
 
-    def get(self, path, **params):
-        if path.startswith("/vacancies/"):
-            raise _http_error(403, '{"errors":[{"value":"captcha_required","captcha_url":"https://hh.ru/account/captcha?state=x"}]}')
-        return super().get(path, **params)
 
-
-def test_captcha_on_details_fails_loudly_instead_of_marking_new(tmp_path):
-    """Раньше 403 капчи считался «карточка недоступна»: все кандидаты → новые, пропавшие → закрытые."""
-    store = mm.Store(tmp_path / "market_v2.db")
+def test_weekly_report_from_history(tmp_path):
+    store = mm.Store(tmp_path / "market.db")
     sent = []
-    with pytest.raises(mm.CaptchaRequired):
-        mm.run(CaptchaApi([item(1)], {}), store, now=NOW, send=sent.append, sleep=lambda s: None)
-    assert store.last_run() is None  # испорченный снимок не сохраняется
-    assert len(sent) == 1 and "капч" in sent[0].lower()
-
-
-def test_fetch_detail_404_is_gone_but_captcha_raises():
-    class Api404:
-        def get(self, path, **params):
-            raise _http_error(404, '{"errors":[{"type":"not_found"}]}')
-
-    assert mm.fetch_detail(Api404(), "1") is None
-    with pytest.raises(mm.CaptchaRequired):
-        mm.fetch_detail(CaptchaApi([], {}), "1")
-
-
-def test_run_api_failure_keeps_window_and_reports(tmp_path):
-    store = mm.Store(tmp_path / "market_v2.db")
-    sent = []
-
-    class Broken:
-        def get(self, path, **params):
-            raise requests.ConnectionError("hh недоступен")
-
-    with pytest.raises(requests.ConnectionError):
-        mm.run(Broken(), store, now=NOW, send=sent.append, sleep=lambda s: None)
-    assert store.last_run() is None
-    assert len(sent) == 1 and "ошибк" in sent[0].lower()
+    base = [_it(f"2026-09-20T1{i}:00:00+0300", name=f"Frontend (React) {i}", employer="Nitka") for i in range(3)]
+    for d in range(8):
+        now = datetime(2026, 9, 29, 8, 0, tzinfo=MSK) + timedelta(days=d)
+        fresh = [_it((now - timedelta(hours=10)).strftime("%Y-%m-%dT%H:%M:%S+0300"),
+                     name="Frontend Developer (React/TypeScript)", employer="Nitka")]
+        base = base + fresh
+        _day(list(base), now, store, sent)
+    msgs = mm.build_weekly(store, datetime(2026, 10, 6, 8, 5, tzinfo=MSK))
+    text = msgs[0]
+    assert "неделя 29.09–05.10" in text
+    assert "Фронтенд: 4 → <b>11</b> (+7)" in text
+    assert "Новые во фронте по дням" in text
+    assert "Nitka" in text and "1 позиция" in text
 
 
 def test_send_telegram_payload_shape(monkeypatch):
@@ -599,7 +605,35 @@ def test_send_telegram_payload_shape(monkeypatch):
     mm.send("<b>привет</b>")
     assert captured["url"].endswith("/bott0k/sendMessage")
     assert captured["json"]["parse_mode"] == "HTML"
-    assert captured["json"]["disable_web_page_preview"] is True
+
+
+def test_run_api_failure_keeps_window_and_reports(tmp_path):
+    store = mm.Store(tmp_path / "market.db")
+    sent = []
+
+    class Broken:
+        def get(self, path, **params):
+            raise requests.ConnectionError("hh недоступен")
+
+    with pytest.raises(requests.ConnectionError):
+        mm.run(Broken(), store, now=NOW, send=sent.append, sleep=lambda s: None)
+    assert store.last_run() is None
+    assert len(sent) == 1 and "ошибк" in sent[0].lower()
+
+
+def test_store_opens_production_v2_schema(tmp_path):
+    """Прод-база market_v2.db создана v2/v3 — v4 обязана открыть её и дописать колонки."""
+    import shutil
+    src = ROOT / "tests" / "fixtures" / "market_v2_schema.sql"
+    import sqlite3
+    db = sqlite3.connect(tmp_path / "m.db")
+    db.executescript(src.read_text())
+    db.close()
+    store = mm.Store(tmp_path / "m.db")
+    assert store.last_run() is not None
+    assert len(store.anchors().points) >= 1  # даты из старых карточек стали опорными точками
+
+
 
 
 # ── контракт с живым API hh (только где есть токен: сервер/контейнер) ──
@@ -617,8 +651,8 @@ def test_live_hh_contract():
     vs = [mm.parse_vacancy(i, country, it_roles) for i in r["items"]]
     assert all(v.published_at.tzinfo for v in vs)
     assert {v.category for v in vs} & {"front", "fullstack"}
-    detail = api.get(f"/vacancies/{vs[0].id}")
-    assert mm.parse_dt(detail["initial_created_at"]) <= vs[0].published_at
+    anchor = mm.fetch_max_id(api)
+    assert anchor and anchor >= max(int(v.id) for v in vs) - 1_000_000  # номер свежей вакансии hh
 
 
 # ── грейд, лиды, срез JS-рынка (06.10.2026) ─────────────────────────────
@@ -654,28 +688,11 @@ def test_primary_stack_counts_each_front_vacancy_once():
     assert vac(3, name="Frontend-разработчик").primary_stack == "js"
 
 
-def test_snapshot_message_sums_and_lines():
-    listing = [
-        vac(1, name="Frontend (React)"), vac(2, name="Team Lead Frontend", snippet="Vue"),
-        vac(3, name="Frontend (AI-native) разработчик"),
-        vac(4, name="Fullstack (React + Node.js)"), vac(5, name="Tech Lead (Fullstack, Node.js)"),
-        vac(6, name="AI-инженер (JS)"), vac(7, name="AQA TypeScript"), vac(8, name="Backend-разработчик (Node.js)"),
-    ]
-    text = mm.build_snapshot_message(listing, NOW)
-    assert "JS-рынок: <b>6</b>" in text                       # 3 фронт + 2 fullstack + 1 AI
-    assert "Фронтенд: <b>3</b>" in text and "лидов 1" in text and "с AI 1" in text
-    assert "React 1" in text and "Vue 1" in text and "Angular 0" in text and "JS/TS без фреймворка 1" in text
-    assert "Fullstack: <b>2</b> · с Node.js 2" in text
-    assert "AI-инженеры на JS/TS: <b>1</b>" in text
-    assert "Москва" not in text and "Россия" not in text      # без городов
-    assert "lead 1" in text or "лиды 1" in text
-
-
 # ── полный просмотр живого среза 06.10: ошибки фронт-категории (208 вакансий) ──
 
 
 @pytest.mark.parametrize("name, expected", [
-    ("React\u00a0Native Middle Developer", "mobile"),          # неразрывный пробел в названии hh
+    ("React\u00a0Native Middle Developer", "front"),           # неразрывный пробел; React Native — фронт
     ("Golang + React developer", "fullstack"),
     ("Разработчик Python/FastAPI + React/TypeScript", "fullstack"),
     ("Mod Developer / Python & React (Мир Танков)", "fullstack"),
@@ -754,3 +771,44 @@ def test_golden_set_classification_is_exact():
     wrong_grade = [(n, g, mm.grade(n)) for n, _, g in rows if (mm.grade(n) or "-") != g]
     assert not wrong, f"категория разошлась с эталоном у {len(wrong)}: {wrong[:10]}"
     assert not wrong_grade, f"грейд разошёлся с эталоном у {len(wrong_grade)}: {wrong_grade[:10]}"
+
+
+class RelevanceApi:
+    """Как hh 06.10: без сортировки по дате страницы перекрываются, часть вакансий не видна."""
+
+    def __init__(self, n):
+        self.ids = [str(1000 + i) for i in range(n)]
+
+    def get(self, path, **params):
+        page = params["page"]
+        if params.get("order_by") == "publication_time":
+            chunk = self.ids[page * 100:(page + 1) * 100]
+        else:
+            chunk = self.ids[max(0, page * 100 - 20):page * 100 + 80]  # сдвиг выдачи между страницами
+        return {"items": [item(i) for i in chunk], "found": len(self.ids), "pages": -(-len(self.ids) // 100)}
+
+
+def test_fetch_items_collects_whole_listing():
+    items, found = mm.fetch_items(RelevanceApi(888), mm.QUERY, sleep=lambda s: None)
+    assert len(items) == found == 888
+
+
+# ── просмотр полной выдачи 06.10 (после починки сортировки): +118 новых названий ──
+
+
+@pytest.mark.parametrize("name, category, grade, stack", [
+    ("Frontend-разработчик (аngular)", "front", None, "angular"),                 # кириллическая «а»
+    ("Fullstack-разработчик (TypeScript / Node.js), Middlе", "fullstack", "middle", "js"),  # кириллическая «е»
+    ("Fullstack-разработчик Middle (С#)", "fullstack_other", "middle", "js"),       # кириллическая «С»
+    ("Разработчик frontend, Qt", "other", None, "js"),
+    ("Старший разработчик frontend, Qt", "other", "senior", "js"),
+    (".NET Frontend Developer (WPF / Avalonia UI)", "other", None, "js"),
+])
+def test_review_full_listing_0610(name, category, grade, stack):
+    v = vac(60, name=name)
+    assert (v.category, v.grade, v.primary_stack) == (category, grade, stack)
+
+
+def test_latinize_only_touches_mixed_words():
+    assert mm.latinize("Frontend-разработчик (аngular)") == "Frontend-разработчик (angular)"
+    assert mm.latinize("Фронтенд-разработчик") == "Фронтенд-разработчик"   # чисто русское слово не трогаем
