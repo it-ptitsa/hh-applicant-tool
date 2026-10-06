@@ -839,3 +839,55 @@ def test_note_file_is_sent(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, "argv", ["mm", "--db", str(tmp_path / "m.db"), "--note-file", str(note)])
     mm.main()
     assert sent == ["💡 <b>Вывод недели</b>: рынок стабилен"]
+
+
+# ── первый прогон агента 06.10: 27 спорных из 266 ───────────────────────
+
+
+@pytest.mark.parametrize("name, category", [
+    ("Senior Software Engineer (TypeScript, AI-assisted development)", "front"),  # AI — стиль работы
+    ("Веб-разработчик (AI-driven / вайбкодинг)", "web"),
+    ("Senior Backend-разработчик (Node.js / TypeScript, интеграции и AI-агенты)", "ai"),  # AI-агенты — профессия
+    ("Python (AI-native) разработчик", "ai"),
+    ("Vibe-coder / AI-кодер (Claude, Cursor)", "ai"),
+])
+def test_ai_as_work_style_vs_ai_role(name, category):
+    assert mm.classify(name) == category
+
+
+def test_assistant_to_head_is_not_lead():
+    assert mm.grade("Технический помощник руководителя / AI-инженер") is None
+
+
+@pytest.mark.parametrize("auto, agent, agree", [
+    ("other", "nontech", True),        # обе вне отчёта
+    ("ai", "other", True),             # AI не на JS — вне отчёта
+    ("ai_js", "ai", True),             # по названию близость к JS не видна
+    ("ai_js", "backend", False),       # в отчёте или нет — важно
+    ("front", "fullstack", False),
+    ("front", "ai", False),
+])
+def test_review_compares_report_buckets(tmp_path, auto, agent, agree):
+    store = mm.Store(tmp_path / "market.db")
+    store.db.execute("INSERT INTO title_review (name, auto_category, auto_grade, status) VALUES ('X', ?, NULL, 'new')",
+                     (auto,))
+    store.review_submit([{"name": "X", "category": agent, "grade": None}])
+    assert store.review_stats()["agreed"] == int(agree)
+
+
+def test_grade_compared_only_inside_report(tmp_path):
+    store = mm.Store(tmp_path / "market.db")
+    store.db.executemany("INSERT INTO title_review (name, auto_category, auto_grade, status) VALUES (?, ?, ?, 'new')",
+                         [("A", "ai", "lead"), ("B", "front", "senior")])
+    store.review_submit([{"name": "A", "category": "ai", "grade": None}, {"name": "B", "category": "front", "grade": None}])
+    assert store.review_stats() == {"reviewed": 2, "agreed": 1, "disputed": 1}
+
+
+def test_recheck_refreshes_stale_auto_answers(tmp_path):
+    """Классификатор поправили — сохранённый «ответ классификатора» и статусы пересчитываются."""
+    store = mm.Store(tmp_path / "market.db")
+    name = "Веб-разработчик (AI-driven / вайбкодинг)"
+    store.db.execute("INSERT INTO title_review (name, auto_category, auto_grade, agent_category, status)"
+                     " VALUES (?, 'ai_js', NULL, 'web', 'disputed')", (name,))
+    store.review_recheck()
+    assert store.review_stats() == {"reviewed": 1, "agreed": 1, "disputed": 0}

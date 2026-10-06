@@ -139,6 +139,9 @@ _SENIOR = re.compile(r"senior|старш|ведущ|сеньор|сениор", 
 _MIDDLE = re.compile(r"middle|мидл", re.I)
 _JUNIOR = re.compile(r"junior|младш|джун|стаж|\bintern\b|trainee", re.I)  # не «Internal»
 _AI = re.compile(r"\bai\b|\bии\b|llm|vibe|вайб|prompt|промпт|agentic", re.I)
+# AI как стиль работы, а не профессия: «TypeScript (AI-assisted development)», «Веб (вайбкодинг)»
+_AI_STYLE = re.compile(r"\bai\s*-?\s*(assisted|driven|first|native)(\s+development)?|вайб\s*-?\s*кодинг"
+                       r"|vibe\s*-?\s*coding", re.I)
 _JS_NEAR = re.compile(
     r"front|фронт|react|\bvue|angular|svelte|typescript|javascript|\bjs\b|node|nest|next\.?js"
     r"|full.?stack|ful+.?стек|фул+.?стек|\bweb|веб", re.I)
@@ -192,8 +195,9 @@ def classify(name: str) -> str:
         return "fullstack"
     if _CMS.search(name) and not _FRAMEWORK.search(name):  # «Сайты WordPress / Верстальщик»
         return "other"
-    if _AI.search(name) and not strong:  # AI-инженер без фронт-слов; рядом ли JS — решит _category
-        return "ai"
+    ai_role = _AI.search(_AI_STYLE.sub(" ", name))
+    if _AI.search(name) and not strong and (ai_role or not (_FRONT_LANG.search(name) or _WEB.search(name))):
+        return "ai"  # AI-инженер без фронт-слов; рядом ли JS — решит _category
     if backend:  # язык (TypeScript/JavaScript) без явного фронта — бэкенд
         return "backend"
     if strong:
@@ -211,7 +215,7 @@ def classify(name: str) -> str:
 def grade(name: str) -> str | None:
     """Грейд по названию; лид проверяется первым — «Senior Team Lead» это лид."""
     name = latinize(name)
-    if _LEAD.search(name):
+    if _LEAD.search(re.sub(r"помощник\w*\s+руководител\w*", " ", name, flags=re.I)):
         return "lead"
     if _SENIOR.search(name):
         return "senior"
@@ -713,6 +717,25 @@ CREATE TABLE IF NOT EXISTS title_review (
     status TEXT NOT NULL DEFAULT 'new'
 );
 """
+def report_bucket(category: str) -> str:
+    """Что важно для отчёта: фронт, fullstack, AI на JS — остальное «вне отчёта»."""
+    return category if category in JS_MARKET else "out"
+
+
+def review_agrees(auto: str, auto_grade: str | None, agent: str, agent_grade: str | None) -> bool:
+    """Сверка вердикта агента с классификатором по тому, что попадает в отчёт.
+
+    Первый прогон 06.10: 21 из 27 споров были «other против nontech» — обе вне отчёта, шум.
+    Близость AI к JS решают требования, а не название: агент, сказавший «ai», согласен и с ai_js.
+    Грейд сверяется только у вакансий отчёта.
+    """
+    a = report_bucket(auto)
+    b = "ai_js" if agent == "ai" and a == "ai_js" else report_bucket(agent)
+    if a != b:
+        return False
+    return a == "out" or (auto_grade or None) == (agent_grade or None)
+
+
 CATEGORIES = {"front", "fullstack", "fullstack_other", "backend", "web", "ai", "ai_js", "mobile", "qa",
               "nontech", "other"}
 
@@ -809,12 +832,31 @@ class Store:
                                       (v["name"],)).fetchone()
                 if row is None:
                     continue
-                # ai / ai_js различаются по требованиям, а не по названию — для сверки это одно
-                norm = lambda c: "ai" if c in ("ai", "ai_js") else c  # noqa: E731
-                agree = (norm(row[0]), row[1]) == (norm(v["category"]), v.get("grade"))
                 self.db.execute("UPDATE title_review SET agent_category = ?, agent_grade = ?, status = ?"
                                 " WHERE name = ?", (v["category"], v.get("grade"),
-                                                    "agreed" if agree else "disputed", v["name"]))
+                                                    "agreed" if review_agrees(row[0], row[1], v["category"], v.get("grade"))
+                                                    else "disputed", v["name"]))
+
+    def review_recheck(self) -> int:
+        """Пересчитать «ответ классификатора» текущим кодом и статусы сверки. Возвращает число изменений."""
+        changed = 0
+        with self.db:
+            rows = self.db.execute("SELECT name, auto_category, auto_grade, agent_category, agent_grade, status"
+                                   " FROM title_review WHERE status IN ('new', 'agreed', 'disputed')").fetchall()
+            for name, auto, auto_g, agent, agent_g, status in rows:
+                new_auto = classify(name)
+                if new_auto == "ai" and auto in ("ai", "ai_js"):
+                    new_auto = auto  # ai / ai_js решали требования — по названию не пересчитать
+                if auto == "other" and new_auto != "other":
+                    new_auto = auto  # «other» мог дать ролевой фильтр — по названию не пересчитать
+                new_g = grade(name)
+                new_status = status if agent is None else (
+                    "agreed" if review_agrees(new_auto, new_g, agent, agent_g) else "disputed")
+                if (new_auto, new_g, new_status) != (auto, auto_g, status):
+                    changed += 1
+                    self.db.execute("UPDATE title_review SET auto_category = ?, auto_grade = ?, status = ?"
+                                    " WHERE name = ?", (new_auto, new_g, new_status, name))
+        return changed
 
     def review_resolve(self, verdicts: list[dict]) -> None:
         """Решение Александра по спорным: становится правдой и применяется к отчётам."""
@@ -1029,6 +1071,7 @@ def run(api, store: Store, now: datetime | None = None, send=send, sleep=time.sl
     if not dry_run:
         store.save_run(report, it_role_of)
         store.record_titles(report.listing, load_golden(), now)
+        store.review_recheck()
     for message in build_daily(report):
         send(message)
     return report
@@ -1167,6 +1210,7 @@ def main() -> None:
     parser.add_argument("--review-queue", action="store_true", help="JSON: новые названия на проверку агенту")
     parser.add_argument("--review-submit", type=Path, help="JSON-вердикты агента [{name, category, grade}]")
     parser.add_argument("--review-resolve", type=Path, help="JSON-решения Александра по спорным")
+    parser.add_argument("--review-recheck", action="store_true", help="пересчитать сверку текущим классификатором")
     parser.add_argument("--disputes", action="store_true", help="JSON: спорные названия")
     parser.add_argument("--note", help="отправить текст в бот (вывод недели от агента)")
     parser.add_argument("--note-file", type=Path, help="отправить в бот текст из файла (UTF-8, HTML)")
@@ -1190,6 +1234,9 @@ def main() -> None:
         sender(args.note)
     elif args.note_file:
         send(args.note_file.read_text(encoding="utf-8"))
+        print("отправлено")  # агент 06.10 принял тишину за сбой и отправил дважды
+    elif args.review_recheck:
+        print(json.dumps({"changed": store.review_recheck(), **store.review_stats()}, ensure_ascii=False))
     else:
         run(Api(load_token()), store, send=sender, dry_run=args.dry_run)
 
