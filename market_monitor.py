@@ -51,6 +51,18 @@ QUERY = (
     ' OR "веб-разработчик" OR "web-разработчик" OR "web разработчик" OR "веб разработчик"'
     ' OR "web developer" OR "веб-программист" OR "web-программист" OR "веб программист")'
 )
+# AI-вакансии — отдельным запросом и только по ролям IT-категории: без ролей запрос упирается в
+# предел выдачи и тащит «агентов по недвижимости» (06.10: 3490 найдено, почти всё мусор).
+AI_QUERY = (
+    'NAME:("ai engineer" OR "ai-engineer" OR "ai инженер" OR "ai-инженер" OR "ии-инженер" OR "ии инженер"'
+    ' OR "ai разработчик" OR "ai-разработчик" OR "ии-разработчик" OR "ai developer" OR llm OR "ai-native"'
+    ' OR "ai native" OR "ai-first" OR вайбкод OR "vibe coding" OR "vibe-coder" OR "prompt engineer")'
+)
+# Фрагмент требований в выдаче обрезан — Node во fullstack добираем полнотекстовым запросом.
+FULL_NODE_QUERY = (
+    'NAME:(fullstack OR "full stack" OR full-stack OR фулстек OR фуллстек) AND (node OR nodejs OR nestjs OR express)'
+)
+SLICE_VERSION = 3  # 1 — Россия; 2 — весь hh + категории; 3 — + AI-запрос, стек, fullstack+Node
 RUSSIA = "113"
 AREA_MOSCOW = "1"
 AREA_SPB = "2"
@@ -85,9 +97,20 @@ _NON_JS_STACK = re.compile(
     r"|битрикс|bitrix|wordpress|\b1с\b|\b1c\b", re.I)
 _CMS = re.compile(r"битрикс|bitrix|wordpress|\b1с\b|\b1c\b|drupal|opencart|joomla|modx|tilda", re.I)
 _WEB = re.compile(r"веб|web", re.I)
+_AI = re.compile(r"\bai\b|\bии\b|llm|vibe|вайб|prompt|промпт|agentic", re.I)
+_JS_NEAR = re.compile(
+    r"front|фронт|react|\bvue|angular|svelte|typescript|javascript|\bjs\b|node|nest|next\.?js"
+    r"|full.?stack|ful+.?стек|фул+.?стек|\bweb|веб", re.I)
+_NODE = re.compile(r"\bnode|\bnest|express", re.I)
+_JS_STRONG = re.compile(
+    r"typescript|javascript|react|\bvue|angular|svelte|\bnode|\bnest|next\.?js|frontend|фронтенд", re.I)
+_AI_NON_JS = re.compile(r"unity|\bml\b|ml-|gamedev|data scien|computer vision|\bcv\b|nlp", re.I)
+STACKS = [("react", re.compile(r"react", re.I)), ("vue", re.compile(r"\bvue", re.I)),
+          ("angular", re.compile(r"angular", re.I)), ("svelte", re.compile(r"svelte", re.I))]
 
-JS_MARKET = {"front", "fullstack", "backend", "web"}
-CATEGORY_LABEL = {"front": "фронт", "fullstack": "fullstack", "backend": "Node/бэкенд", "web": "веб"}
+JS_MARKET = {"front", "fullstack", "backend", "web", "ai_js"}
+CATEGORY_LABEL = {"front": "фронт", "fullstack": "fullstack", "backend": "Node/бэкенд", "web": "веб",
+                  "ai_js": "AI на JS/TS"}
 
 
 def classify(name: str) -> str:
@@ -108,6 +131,8 @@ def classify(name: str) -> str:
         return "fullstack"
     if backend and strong:  # «Frontend / Node.js developer» — это fullstack
         return "fullstack"
+    if _AI.search(name) and not strong:  # AI-инженер без фронт-слов; рядом ли JS — решит _category
+        return "ai"
     if backend:  # язык (TypeScript/JavaScript) без явного фронта — бэкенд
         return "backend"
     if strong:
@@ -139,6 +164,9 @@ class Vacancy:
     salary_to: int | None
     currency: str | None
     url: str
+    stack: tuple[str, ...] = ()
+    node: bool = False
+    ai: bool = False
 
 
 Closed = tuple  # (id, название, работодатель, категория)
@@ -177,6 +205,28 @@ class Report:
             "remote": sum(v.remote for v in f),
         }
 
+    prev_slice: int | None = None
+
+    def stack_counts(self) -> dict[str, int]:
+        out = {"react": 0, "vue": 0, "angular": 0, "svelte": 0, "several": 0, "none": 0}
+        for v in self.front:
+            key = v.stack[0] if len(v.stack) == 1 else ("several" if v.stack else "none")
+            out[key] += 1
+        return out
+
+    def fullstack_counts(self) -> tuple[int, int]:
+        fs = [v for v in self.listing if v.category == "fullstack"]
+        return len(fs), sum(v.node for v in fs)
+
+    def ai_counts(self) -> dict[str, int]:
+        L = self.listing
+        return {
+            "front": sum(v.category == "front" and v.ai for v in L),
+            "fullstack": sum(v.category == "fullstack" and v.ai for v in L),
+            "ai_js": sum(v.category == "ai_js" for v in L),
+            "all": sum(v.ai or v.category in ("ai", "ai_js") for v in L),
+        }
+
     def hidden_in(self, cats: set[str] | None = None) -> int:
         out = 0
         for h in self.hidden:
@@ -191,6 +241,7 @@ class Run(NamedTuple):
     run_at: datetime
     front_total: int
     js_total: int
+    slice_version: int = 2
 
 
 def parse_dt(value: str) -> datetime:
@@ -230,11 +281,18 @@ def it_role_index(professional_roles: dict) -> set[str]:
     return roles
 
 
-def parse_vacancy(item: dict, country_of: dict[str, str], it_roles: set[str] | None = None) -> Vacancy:
+def _snippet(item: dict) -> str:
+    sn = item.get("snippet") or {}
+    return " ".join(x for x in (sn.get("requirement"), sn.get("responsibility")) if x)
+
+
+def parse_vacancy(item: dict, country_of: dict[str, str], it_roles: set[str] | None = None,
+                  node_ids: Iterable[str] = frozenset()) -> Vacancy:
     employer = (item.get("employer") or {}).get("name") or "—"
     salary = item.get("salary") or {}
     area_id = str((item.get("area") or {}).get("id") or "")
     name = item.get("name") or "—"
+    text = f"{name} {_snippet(item)}"
     return Vacancy(
         id=str(item["id"]),
         name=name,
@@ -248,6 +306,9 @@ def parse_vacancy(item: dict, country_of: dict[str, str], it_roles: set[str] | N
         salary_to=salary.get("to"),
         currency=salary.get("currency"),
         url=item.get("alternate_url") or f"https://hh.ru/vacancy/{item['id']}",
+        stack=tuple(s for s, rx in STACKS if rx.search(text)),
+        node=bool(_NODE.search(text)) or str(item["id"]) in set(node_ids),
+        ai=bool(_AI.search(name)),
     )
 
 
@@ -255,7 +316,24 @@ def _category(item: dict, name: str, it_roles: set[str] | None) -> str:
     roles = {str(r.get("id")) for r in item.get("professional_roles") or []}
     if it_roles and roles and not roles & it_roles:
         return "other"  # не IT-вакансия, сколько бы фронт-слов ни было в названии
-    return classify(name)
+    category = classify(name)
+    if category == "ai":
+        return "ai_js" if _ai_near_js(name, _snippet(item)) else "ai"
+    return category
+
+
+def _ai_near_js(name: str, snippet: str) -> bool:
+    """AI-вакансия близка к фронту/JS?
+
+    06.10: признак, найденный в требованиях по словам «веб»/«fullstack», записал в JS
+    «Senior AI developer (Python)» и «Offensive Security Developer (Python/Go)». Поэтому:
+    JS в названии → да; чужой язык в названии → нет; в требованиях — только явный JS-стек.
+    """
+    if _JS_NEAR.search(name):
+        return True
+    if _NON_JS_STACK.search(name) or _AI_NON_JS.search(name):
+        return False
+    return bool(_JS_STRONG.search(snippet))
 
 
 # ── чистая логика ───────────────────────────────────────────────────────
@@ -369,6 +447,19 @@ def build_messages(r: Report) -> list[str]:
         f" · удалёнка {g['remote']}",
         f"JS-рынок (фронт + fullstack + Node + веб): <b>{len(js)}</b> {_delta(len(js), r.prev_js)}",
     ]
+    sc = r.stack_counts()
+    fs_total, fs_node = r.fullstack_counts()
+    ai = r.ai_counts()
+    lines += [
+        f"Стек фронта: React {sc['react']} · Vue {sc['vue']} · Angular {sc['angular']} · Svelte {sc['svelte']}"
+        f" · несколько {sc['several']} · не указан {sc['none']}",
+        f"Fullstack: <b>{fs_total}</b> · с Node.js {fs_node}",
+        f"🤖 AI ближе к фронту: <b>{ai['front'] + ai['fullstack'] + ai['ai_js']}</b>"
+        f" (фронт с AI {ai['front']} · fullstack с AI {ai['fullstack']} · AI-инженеры на JS/TS {ai['ai_js']})"
+        f" · всего AI-вакансий в IT: {ai['all']}",
+    ]
+    if r.prev_slice is not None and r.prev_slice < SLICE_VERSION:
+        lines.append("ℹ️ Срез расширен (AI-вакансии, fullstack с Node) — дельта JS-рынка сегодня несравнима")
     if r.found > HH_RESULTS_CAP:
         lines.append(f"⚠️ hh отдаёт не больше {HH_RESULTS_CAP} из {r.found} — хвост выдачи не виден")
     lines += [
@@ -421,13 +512,15 @@ CREATE TABLE IF NOT EXISTS runs (
     run_at TEXT NOT NULL, window_start TEXT NOT NULL, found INTEGER,
     front_total INTEGER NOT NULL, js_total INTEGER NOT NULL,
     russia INTEGER, moscow INTEGER, spb INTEGER, other_countries INTEGER, remote INTEGER,
-    new_front INTEGER, bumped_front INTEGER, reopened_front INTEGER, closed_front INTEGER, hidden INTEGER
+    new_front INTEGER, bumped_front INTEGER, reopened_front INTEGER, closed_front INTEGER, hidden INTEGER,
+    slice_version INTEGER
 );
 CREATE TABLE IF NOT EXISTS snapshot (
     run_id INTEGER NOT NULL REFERENCES runs(id),
     vacancy_id TEXT NOT NULL,
     name TEXT, employer TEXT, category TEXT, area_id TEXT, country_id TEXT, remote INTEGER,
     published_at TEXT, salary_from INTEGER, salary_to INTEGER, currency TEXT,
+    stack TEXT, node INTEGER, ai INTEGER,
     PRIMARY KEY (run_id, vacancy_id)
 );
 CREATE TABLE IF NOT EXISTS vacancy_initial (
@@ -448,12 +541,28 @@ class Store:
     def __init__(self, path: Path | str) -> None:
         self.db = sqlite3.connect(str(path))
         self.db.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Догоняет схему базы, созданной ранней v2 (без stack/node/ai/slice_version)."""
+        wanted = {"snapshot": {"stack": "TEXT", "node": "INTEGER", "ai": "INTEGER"},
+                  "runs": {"slice_version": "INTEGER"}}
+        for table, cols in wanted.items():
+            have = {r[1] for r in self.db.execute(f"PRAGMA table_info({table})")}
+            if not have:
+                continue
+            for col, typ in cols.items():
+                if col not in have:
+                    self.db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {typ}")
+        self.db.commit()
 
     def last_run(self) -> Run | None:
         row = self.db.execute(
-            "SELECT id, run_at, front_total, js_total FROM runs ORDER BY id DESC LIMIT 1"
+            "SELECT id, run_at, front_total, js_total, slice_version FROM runs ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        return None if row is None else Run(row[0], datetime.fromisoformat(row[1]), row[2], row[3])
+        if row is None:
+            return None
+        return Run(row[0], datetime.fromisoformat(row[1]), row[2], row[3], row[4] or 2)
 
     def snapshot_ids(self, run_id: int) -> set[str]:
         return {r[0] for r in self.db.execute("SELECT vacancy_id FROM snapshot WHERE run_id = ?", (run_id,))}
@@ -489,17 +598,20 @@ class Store:
             cur = self.db.execute(
                 "INSERT INTO runs (run_at, window_start, found, front_total, js_total, russia, moscow,"
                 " spb, other_countries, remote, new_front, bumped_front, reopened_front, closed_front,"
-                " hidden) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " hidden, slice_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (r.now.isoformat(), r.window_start.isoformat(), r.found, len(r.front), len(r.js),
                  g["russia"], g["moscow"], g["spb"], g["other"], g["remote"],
                  sum(front(v) for v in r.new), sum(front(v) for v, _ in r.bumped),
                  sum(front(v) for v, _ in r.reopened), sum(c[3] == "front" for c in r.closed),
-                 len(r.hidden)))
+                 len(r.hidden), SLICE_VERSION))
             run_id = cur.lastrowid
             self.db.executemany(
-                "INSERT OR REPLACE INTO snapshot VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO snapshot (run_id, vacancy_id, name, employer, category, area_id,"
+                " country_id, remote, published_at, salary_from, salary_to, currency, stack, node, ai)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 [(run_id, v.id, v.name, v.employer, v.category, v.area_id, v.country_id, int(v.remote),
-                  v.published_at.isoformat(), v.salary_from, v.salary_to, v.currency) for v in vacancies])
+                  v.published_at.isoformat(), v.salary_from, v.salary_to, v.currency,
+                  ",".join(v.stack), int(v.node), int(v.ai)) for v in vacancies])
             hidden = [h if isinstance(h, tuple) else (h, None) for h in r.hidden]
             events = (
                 [(run_id, v.id, "new", v.category, None) for v in r.new]
@@ -515,21 +627,34 @@ class Store:
 # ── обращение к hh ──────────────────────────────────────────────────────
 
 
-def fetch_listing(api, country_of: dict[str, str], sleep=time.sleep,
-                  it_roles: set[str] | None = None) -> tuple[list[Vacancy], int]:
-    found: dict[str, Vacancy] = {}
+def fetch_items(api, text: str, sleep=time.sleep, **params) -> tuple[dict[str, dict], int]:
+    """Вся выдача запроса постранично; дубли между страницами схлопываются."""
+    items: dict[str, dict] = {}
     page, total = 0, 0
     while True:
-        resp = api.get("/vacancies", text=QUERY, per_page=PER_PAGE, page=page)
+        resp = api.get("/vacancies", text=text, per_page=PER_PAGE, page=page, **params)
         total = resp.get("found", 0)
         for item in resp.get("items", []):
-            v = parse_vacancy(item, country_of, it_roles)
-            found[v.id] = v  # выдача может сдвигаться между страницами — дубли схлопываем
+            items[str(item["id"])] = item
         if page >= resp.get("pages", 1) - 1:
             break
         page += 1
         sleep(DETAIL_DELAY)
-    return list(found.values()), total
+    return items, total
+
+
+def fetch_listing(api, country_of: dict[str, str], sleep=time.sleep,
+                  it_roles: set[str] | None = None) -> tuple[list[Vacancy], int]:
+    """Основной запрос + AI-запрос по IT-ролям; Node во fullstack — по отдельному запросу."""
+    node_items, _ = fetch_items(api, FULL_NODE_QUERY, sleep)
+    node_ids = set(node_items)
+    main, total = fetch_items(api, QUERY, sleep)
+    ai_items: dict[str, dict] = {}
+    if it_roles:
+        ai_roles = sorted(r for r in it_roles if r != OTHER_ROLE)
+        ai_items, _ = fetch_items(api, AI_QUERY, sleep, professional_role=ai_roles)
+    merged = {**ai_items, **main}  # основная выдача приоритетнее
+    return [parse_vacancy(i, country_of, it_roles, node_ids) for i in merged.values()], total
 
 
 class CaptchaRequired(RuntimeError):
@@ -617,6 +742,7 @@ def build_report(api, store: Store, now: datetime, sleep) -> tuple[Report, dict[
     report = Report(
         now=now, window_start=start, listing=listing, found=found,
         prev_front=last.front_total if last else None, prev_js=last.js_total if last else None,
+        prev_slice=last.slice_version if last else None,
         new=new, bumped=bumped, reopened=reopened, closed=closed, hidden=hidden,
     )
     return report, fetched
