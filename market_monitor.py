@@ -78,9 +78,12 @@ LIST_TITLE_LIMIT = 90
 # ── категории по названию ───────────────────────────────────────────────
 
 _QA = re.compile(r"\bqa\b|aqa|тестиров|автотест|\bsdet\b|test engineer", re.I)
-_NONTECH = re.compile(
-    r"аналитик|analyst|дизайнер|designer|менеджер|manager|преподават|учител|наставник|ментор"
+# Нетех-профессии, которые не перебиваются лид-словом: «Team Lead аналитиков» — аналитик.
+_NONTECH_STRICT = re.compile(
+    r"аналитик|analyst|дизайнер|designer|преподават|учител|наставник|ментор"
     r"|teacher|tutor|рекрутер|recruit|product owner|продакт|scrum", re.I)
+# «менеджер» — нетех, если это не руководитель разработки («Engineering Manager (Frontend)»).
+_MANAGER = re.compile(r"менеджер|manager", re.I)
 _MOBILE = re.compile(r"react native|android|\bios\b|flutter|mobile|мобильн", re.I)
 _FULLSTACK = re.compile(r"full.?stack|ful+.?стек|фул+.?стек", re.I)
 _BACKEND = re.compile(r"backend|back-end|бэкенд|бекенд|серверн|\bnode|\bnest", re.I)
@@ -126,8 +129,10 @@ def classify(name: str) -> str:
         return "qa"
     if _PM.search(name):
         return "nontech"
+    if _NONTECH_STRICT.search(name):
+        return "nontech"
     dev_lead = _LEAD.search(name) and (_FRONT_STRONG.search(name) or _FULLSTACK.search(name) or _BACKEND.search(name))
-    if _NONTECH.search(name) and not dev_lead:  # «Engineering Manager (Frontend)» — это лид фронта
+    if _MANAGER.search(name) and not dev_lead:  # «Engineering Manager (Frontend)» — это лид фронта
         return "nontech"
     if _MOBILE.search(name):
         return "mobile"

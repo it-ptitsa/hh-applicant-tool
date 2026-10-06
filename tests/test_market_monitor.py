@@ -639,6 +639,9 @@ def test_live_hh_contract():
     ("Стажёр-фронтенд-разработчик", "front", "junior"),
     ("Frontend-разработчик", "front", None),
     ("Руководитель проектов (веб)", "nontech", "lead"),
+    # пойман глазами на живом срезе 06.10: лид-слово не должно перебивать «аналитик»
+    ("Старший Full-stack аналитик / Team Lead аналитиков", "nontech", "lead"),
+    ("Team Lead дизайнеров (UI/UX, Frontend-команда)", "nontech", "lead"),
 ])
 def test_grade_and_lead_category(name, category, grade):
     assert mm.classify(name) == category
