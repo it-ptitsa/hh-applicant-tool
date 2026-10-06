@@ -1,7 +1,10 @@
 # market-monitor Specification
 
 ## Purpose
-TBD - created by archiving change add-market-monitor. Update Purpose after archive.
+Ежедневно и еженедельно показывать Александру и его ученикам состояние JS-рынка вакансий на hh
+(фронтенд, fullstack, AI на JS): объём, стек, грейды, новые, поднятые, переоткрытые и закрытые
+вакансии — с проверками перед отправкой и независимой сверкой классификации, чтобы цифрам можно
+было доверять при советах по поиску работы.
 
 ## Requirements
 
