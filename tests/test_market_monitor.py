@@ -38,8 +38,17 @@ AREAS = [
 COUNTRY = mm.country_index(AREAS)
 
 
+PROF_ROLES = {"categories": [
+    {"id": "11", "name": "Информационные технологии", "roles": [
+        {"id": "96", "name": "Программист, разработчик"}, {"id": "104", "name": "Руководитель группы разработки"},
+        {"id": "34", "name": "Дизайнер, художник"}, {"id": "10", "name": "Аналитик"}, {"id": "124", "name": "Тестировщик"}]},
+    {"id": "22", "name": "Рестораны", "roles": [{"id": "94", "name": "Повар, пекарь, кондитер"}]},
+]}
+IT_ROLES = mm.it_role_index(PROF_ROLES)
+
+
 def item(vid, name="Frontend-разработчик", employer="ООО Ромашка", area="1",
-         published="2026-10-05T20:00:00+0300", remote=False, salary=None):
+         published="2026-10-05T20:00:00+0300", remote=False, salary=None, roles=("96",)):
     """Вакансия в том виде, в каком её отдаёт поиск hh (поля сверены с живым API)."""
     return {
         "id": str(vid),
@@ -51,11 +60,12 @@ def item(vid, name="Frontend-разработчик", employer="ООО Рома�
         "created_at": published,
         "salary": salary,
         "alternate_url": f"https://hh.ru/vacancy/{vid}",
+        "professional_roles": [{"id": r, "name": "..."} for r in roles],
     }
 
 
 def vac(vid, **kw):
-    return mm.parse_vacancy(item(vid, **kw), COUNTRY)
+    return mm.parse_vacancy(item(vid, **kw), COUNTRY, IT_ROLES)
 
 
 # ── разбор и справочники ────────────────────────────────────────────────
@@ -84,8 +94,38 @@ def test_parse_vacancy_survives_missing_optional_fields():
     raw["employer"] = None
     raw["work_format"] = None
     raw["area"] = None
-    v = mm.parse_vacancy(raw, COUNTRY)
+    raw["professional_roles"] = None
+    v = mm.parse_vacancy(raw, COUNTRY, IT_ROLES)
     assert v.employer == "—" and v.remote is False and v.country_id == ""
+
+
+# ── запрос и роли ───────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("term", ['"vue.js"', "vuejs", "angularjs", '"next.js"', "nextjs"])
+def test_query_has_alternative_spellings(term):
+    """06.10: «Vue.js разработчик» прошёл мимо запроса — hh не склеивает vue.js с vue."""
+    assert term in mm.QUERY
+
+
+def test_it_roles_are_whole_it_category_plus_other():
+    assert {"96", "104", "34", "10", "124"} <= IT_ROLES
+    assert "40" in IT_ROLES  # «Другое»: «Фронтенд инженер для десктопных приложений»
+    assert "94" not in IT_ROLES
+
+
+def test_non_it_role_is_never_front():
+    """06.10: во «Фронтенд» попали «Повар в ресторан „La Vue“» и уборщица оттуда же."""
+    assert vac(1, name='Повар в ресторан "La Vue"', roles=("94",)).category == "other"
+
+
+def test_frontend_under_designer_role_is_kept():
+    """HTML-верстальщиков работодатели публикуют под ролью «Дизайнер» — их не теряем."""
+    assert vac(2, name="HTML-верстальщик / Frontend-верстальщик", roles=("34",)).category == "front"
+
+
+def test_missing_roles_fall_back_to_title():
+    assert vac(3, roles=()).category == "front"
 
 
 # ── категории ───────────────────────────────────────────────────────────
@@ -308,6 +348,8 @@ class FakeApi:
         self.calls.append((path, params))
         if path == "/areas":
             return AREAS
+        if path == "/professional_roles":
+            return PROF_ROLES
         if path == "/vacancies":
             assert "area" not in params, "собираем весь hh, без фильтра по стране"
             page, per = params.get("page", 0), params.get("per_page", 100)
@@ -444,10 +486,12 @@ def test_send_telegram_payload_shape(monkeypatch):
 def test_live_hh_contract():
     api = mm.Api(mm.load_token())
     country = mm.country_index(api.get("/areas"))
+    it_roles = mm.it_role_index(api.get("/professional_roles"))
+    assert "96" in it_roles and "94" not in it_roles
     assert country.get("1") == "113" and country.get("1002") == "16"
     r = api.get("/vacancies", text=mm.QUERY, per_page=20, page=0)
     assert 300 < r["found"] < mm.HH_RESULTS_CAP, f"объединённый запрос: found={r['found']}"
-    vs = [mm.parse_vacancy(i, country) for i in r["items"]]
+    vs = [mm.parse_vacancy(i, country, it_roles) for i in r["items"]]
     assert all(v.published_at.tzinfo for v in vs)
     assert {v.category for v in vs} & {"front", "fullstack"}
     detail = api.get(f"/vacancies/{vs[0].id}")

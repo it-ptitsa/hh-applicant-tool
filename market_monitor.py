@@ -39,10 +39,12 @@ import requests
 
 from chat_digest import CONFIG_DIR, Api, load_token
 
-# Объединение срезов в один запрос (вместе ~900 вакансий — в пределах 2000 выдачи hh).
-# Без «верстальщик» (полиграфия) и «next.js» (hh режет на next+js и цепляет Node.js).
+# Объединение срезов в один запрос (вместе ~850 вакансий — в пределах 2000 выдачи hh).
+# Без «верстальщик» (полиграфия). Написания vue.js/vuejs/angularjs hh не склеивает с vue/angular —
+# 06.10 «Vue.js разработчик» прошёл мимо. «next.js» в кавычках 06.10: 13 вакансий, шума 0.
 QUERY = (
     "NAME:(frontend OR фронтенд OR front-end OR react OR vue OR angular OR typescript OR javascript"
+    ' OR "vue.js" OR vuejs OR angularjs OR "next.js" OR nextjs'
     ' OR nuxt OR svelte OR "ui разработчик" OR "ui-разработчик" OR "разработчик интерфейсов" OR "ui developer"'
     ' OR fullstack OR "full stack" OR full-stack OR фулстек OR фуллстек'
     " OR node OR nodejs OR nestjs"
@@ -211,7 +213,24 @@ def country_index(areas: list[dict]) -> dict[str, str]:
     return index
 
 
-def parse_vacancy(item: dict, country_of: dict[str, str]) -> Vacancy:
+OTHER_ROLE = "40"  # «Другое» — туда кладут, например, «Фронтенд инженер для десктопных приложений»
+
+
+def it_role_index(professional_roles: dict) -> set[str]:
+    """Роли IT-категории hh из справочника /professional_roles плюс «Другое».
+
+    Ролевой фильтр нужен против слов-совпадений: 06.10 во «Фронтенд» попали «Повар в
+    ресторан „La Vue“» и уборщица оттуда же. Одной роли «Программист» мало — HTML-
+    верстальщиков публикуют под «Дизайнером» и «Аналитиком».
+    """
+    roles = {OTHER_ROLE}
+    for cat in professional_roles.get("categories", []):
+        if "информац" in (cat.get("name") or "").lower():
+            roles |= {str(r["id"]) for r in cat.get("roles", [])}
+    return roles
+
+
+def parse_vacancy(item: dict, country_of: dict[str, str], it_roles: set[str] | None = None) -> Vacancy:
     employer = (item.get("employer") or {}).get("name") or "—"
     salary = item.get("salary") or {}
     area_id = str((item.get("area") or {}).get("id") or "")
@@ -223,13 +242,20 @@ def parse_vacancy(item: dict, country_of: dict[str, str]) -> Vacancy:
         area_id=area_id,
         country_id=country_of.get(area_id, ""),
         remote=any(f.get("id") == "REMOTE" for f in item.get("work_format") or []),
-        category=classify(name),
+        category=_category(item, name, it_roles),
         published_at=parse_dt(item["published_at"]),
         salary_from=salary.get("from"),
         salary_to=salary.get("to"),
         currency=salary.get("currency"),
         url=item.get("alternate_url") or f"https://hh.ru/vacancy/{item['id']}",
     )
+
+
+def _category(item: dict, name: str, it_roles: set[str] | None) -> str:
+    roles = {str(r.get("id")) for r in item.get("professional_roles") or []}
+    if it_roles and roles and not roles & it_roles:
+        return "other"  # не IT-вакансия, сколько бы фронт-слов ни было в названии
+    return classify(name)
 
 
 # ── чистая логика ───────────────────────────────────────────────────────
@@ -489,14 +515,15 @@ class Store:
 # ── обращение к hh ──────────────────────────────────────────────────────
 
 
-def fetch_listing(api, country_of: dict[str, str], sleep=time.sleep) -> tuple[list[Vacancy], int]:
+def fetch_listing(api, country_of: dict[str, str], sleep=time.sleep,
+                  it_roles: set[str] | None = None) -> tuple[list[Vacancy], int]:
     found: dict[str, Vacancy] = {}
     page, total = 0, 0
     while True:
         resp = api.get("/vacancies", text=QUERY, per_page=PER_PAGE, page=page)
         total = resp.get("found", 0)
         for item in resp.get("items", []):
-            v = parse_vacancy(item, country_of)
+            v = parse_vacancy(item, country_of, it_roles)
             found[v.id] = v  # выдача может сдвигаться между страницами — дубли схлопываем
         if page >= resp.get("pages", 1) - 1:
             break
@@ -559,7 +586,8 @@ def build_report(api, store: Store, now: datetime, sleep) -> tuple[Report, dict[
     last = store.last_run()
     start = window_start(last.run_at if last else None, now)
     country_of = country_index(api.get("/areas"))
-    listing, found = fetch_listing(api, country_of, sleep)
+    it_roles = it_role_index(api.get("/professional_roles"))
+    listing, found = fetch_listing(api, country_of, sleep, it_roles)
 
     cands = candidates(listing, start)
     initial = store.cached_initial(v.id for v in cands)
