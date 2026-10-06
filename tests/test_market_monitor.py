@@ -48,7 +48,7 @@ IT_ROLES = mm.it_role_index(PROF_ROLES)
 
 
 def item(vid, name="Frontend-разработчик", employer="ООО Ромашка", area="1",
-         published="2026-10-05T20:00:00+0300", remote=False, salary=None, roles=("96",)):
+         published="2026-10-05T20:00:00+0300", remote=False, salary=None, roles=("96",), snippet=""):
     """Вакансия в том виде, в каком её отдаёт поиск hh (поля сверены с живым API)."""
     return {
         "id": str(vid),
@@ -61,11 +61,12 @@ def item(vid, name="Frontend-разработчик", employer="ООО Рома�
         "salary": salary,
         "alternate_url": f"https://hh.ru/vacancy/{vid}",
         "professional_roles": [{"id": r, "name": "..."} for r in roles],
+        "snippet": {"requirement": snippet, "responsibility": None},
     }
 
 
-def vac(vid, **kw):
-    return mm.parse_vacancy(item(vid, **kw), COUNTRY, IT_ROLES)
+def vac(vid, node_ids=frozenset(), **kw):
+    return mm.parse_vacancy(item(vid, **kw), COUNTRY, IT_ROLES, node_ids)
 
 
 # ── разбор и справочники ────────────────────────────────────────────────
@@ -173,8 +174,76 @@ def test_classify(name, expected):
 
 
 def test_js_market_categories():
-    assert mm.JS_MARKET == {"front", "fullstack", "backend", "web"}
+    assert mm.JS_MARKET == {"front", "fullstack", "backend", "web", "ai_js"}
     assert "fullstack_other" not in mm.JS_MARKET  # fullstack на .NET/Java/PHP — не JS-рынок
+
+
+# ── стек, Node, AI ──────────────────────────────────────────────────────
+
+
+def test_stack_from_title():
+    assert vac(1, name="Frontend-разработчик (React)").stack == ("react",)
+
+
+def test_stack_from_snippet_when_title_is_generic():
+    assert vac(2, name="Frontend-разработчик", snippet="Опыт коммерческой разработки на Vue 3").stack == ("vue",)
+
+
+def test_stack_several_and_none():
+    assert vac(3, name="Frontend (React / Angular)").stack == ("react", "angular")
+    assert vac(4, name="Frontend-разработчик", snippet="HTML, CSS, верстка").stack == ()
+
+
+def test_fullstack_node_from_title_snippet_or_fulltext_query():
+    assert vac(5, name="Fullstack-разработчик (React + Node.js)").node is True
+    assert vac(6, name="Fullstack-разработчик", snippet="NestJS, PostgreSQL").node is True
+    assert vac(7, name="Fullstack-разработчик", snippet="PHP, Laravel").node is False
+    assert vac(8, name="Fullstack-разработчик", node_ids={"8"}).node is True
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("Fullstack AI Engineer", "fullstack"),
+    ("Frontend (AI-native) разработчик", "front"),
+    ("Senior Frontend-разработчик (AI Agent / SDLC Automation)", "front"),
+    ("Python (AI-native) разработчик", "ai"),
+    ("Senior AI developer (Python)", "ai"),
+    ("Vibe-coder / AI-кодер (Claude, Cursor)", "ai"),
+    ("ИИ-инженер / AI-инженер", "ai"),
+    ("AI-native Project Manager / Delivery Lead", "nontech"),
+    ("QA-инженер (AI First, CRM)", "qa"),
+    ("Продуктовый дизайнер AI Native (Senior)", "nontech"),
+])
+def test_classify_ai(name, expected):
+    assert mm.classify(name) == expected
+
+
+def test_ai_engineer_near_js_by_title_or_snippet():
+    assert vac(10, name="AI-инженер (разработка голосовых и текстовых роботов, JS)").category == "ai_js"
+    assert vac(11, name="Middle AI Engineer", snippet="TypeScript, Node.js, LangChain").category == "ai_js"
+    assert vac(12, name="Senior AI developer (Python)", snippet="PyTorch, FastAPI").category == "ai"
+
+
+@pytest.mark.parametrize("name, snippet", [
+    # пойманы на живой выдаче 06.10: «веб» и «fullstack» в требованиях — не признак JS-стека
+    ("AI-first Developer / Python Developer", "Разработка веб-сервисов, fullstack-подход"),
+    ("Senior AI developer (Python)", "веб-сервисы, REST API"),
+    ("Offensive Security Developer (Python/Go, AI/LLM)", "web security, TypeScript будет плюсом"),
+    ("Python-разработчик (AI - агенты)", "React — плюс"),
+    ("AI Engineer (GameDev)", "Unity, C#"),
+])
+def test_ai_python_and_others_are_not_js(name, snippet):
+    assert vac(30, name=name, snippet=snippet).category == "ai"
+
+
+def test_ai_flag_on_front_and_fullstack():
+    assert vac(13, name="Fullstack AI Engineer").ai is True
+    assert vac(14, name="Frontend (AI-native) разработчик").ai is True
+    assert vac(15, name="Frontend-разработчик").ai is False
+
+
+def test_ai_query_is_restricted_and_clean():
+    assert "агент" not in mm.AI_QUERY  # приносил агентов по недвижимости
+    assert "llm" in mm.AI_QUERY and '"ai engineer"' in mm.AI_QUERY
 
 
 # ── окно и классификация по возрасту ────────────────────────────────────
@@ -294,6 +363,36 @@ def test_summary_js_market_line():
     assert "JS-рынок за то же время: новые 2" in text
 
 
+def _report_mix():
+    listing = [
+        vac(1, name="Frontend (React)"), vac(2, name="Frontend", snippet="Vue 3"),
+        vac(3, name="Frontend (React / Angular)"), vac(4, name="Frontend-разработчик"),
+        vac(5, name="Frontend (AI-native) разработчик"),
+        vac(6, name="Fullstack (React + Node.js)"), vac(7, name="Fullstack", snippet="PHP"),
+        vac(8, name="Fullstack AI Engineer", snippet="Node.js"),
+        vac(9, name="AI-инженер (JS)"), vac(10, name="Senior AI developer (Python)"),
+    ]
+    return _report(listing=listing, found=len(listing), prev_front=None, prev_js=None,
+                   new=[], bumped=[], reopened=[], closed=[], hidden=[])
+
+
+def test_summary_front_stack_line():
+    text = mm.build_messages(_report_mix())[0]
+    assert "Стек фронта: React 1 · Vue 1 · Angular 0 · Svelte 0 · несколько 1 · не указан 2" in text
+
+
+def test_summary_fullstack_with_node():
+    text = mm.build_messages(_report_mix())[0]
+    assert "Fullstack: <b>3</b> · с Node.js 2" in text
+
+
+def test_summary_ai_block():
+    text = mm.build_messages(_report_mix())[0]
+    assert "AI ближе к фронту: <b>3</b>" in text
+    assert "фронт с AI 1 · fullstack с AI 1 · AI-инженеры на JS/TS 1" in text
+    assert "всего AI-вакансий в IT: 4" in text
+
+
 def test_first_run_has_no_delta():
     text = mm.build_messages(_report(prev_front=None, prev_js=None))[0]
     assert "первый снимок" in text
@@ -335,14 +434,29 @@ def test_store_roundtrip(tmp_path):
     assert reopened.cached_initial(["1", "2"]) == {"1": mm.parse_dt("2026-09-01T10:00:00+0300")}
 
 
+def test_store_migrates_old_v2_schema(tmp_path):
+    """market_v2.db на проде создан без колонок stack/node/ai — открытие не должно падать."""
+    import sqlite3
+    path = tmp_path / "market_v2.db"
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE snapshot (run_id INTEGER, vacancy_id TEXT, name TEXT, employer TEXT, category TEXT,"
+               " area_id TEXT, country_id TEXT, remote INTEGER, published_at TEXT, salary_from INTEGER,"
+               " salary_to INTEGER, currency TEXT, PRIMARY KEY (run_id, vacancy_id))")
+    db.commit(); db.close()
+    store = mm.Store(path)
+    rid = store.save_run(_report(), _listing())
+    assert store.snapshot_ids(rid) == {"1", "2", "3", "4", "5"}
+
+
 # ── сквозной run(): фейковый API hh, настоящая SQLite, перехват Telegram ─
 
 
 class FakeApi:
     """Отвечает как API hh: /areas, постраничный поиск, детальные карточки, 404 для удалённых."""
 
-    def __init__(self, listing, details):
+    def __init__(self, listing, details, extra=None):
         self.listing, self.details, self.calls = listing, details, []
+        self.extra = extra or {}
 
     def get(self, path, **params):
         self.calls.append((path, params))
@@ -352,10 +466,12 @@ class FakeApi:
             return PROF_ROLES
         if path == "/vacancies":
             assert "area" not in params, "собираем весь hh, без фильтра по стране"
+            if params.get("text") == mm.AI_QUERY:
+                assert params.get("professional_role"), "AI-запрос только по IT-ролям"
+            src = self.listing if params.get("text") == mm.QUERY else self.extra.get(params.get("text"), [])
             page, per = params.get("page", 0), params.get("per_page", 100)
-            pages = max(1, -(-len(self.listing) // per))
-            return {"items": self.listing[page * per:(page + 1) * per],
-                    "found": len(self.listing), "pages": pages, "page": page}
+            pages = max(1, -(-len(src) // per))
+            return {"items": src[page * per:(page + 1) * per], "found": len(src), "pages": pages, "page": page}
         vid = path.rsplit("/", 1)[-1]
         if vid not in self.details:
             resp = requests.Response()
@@ -390,7 +506,12 @@ def test_run_two_days_end_to_end(tmp_path):
         "7": {"initial_created_at": "2026-08-21T14:00:00+0300"},
         "8": {"initial_created_at": "2026-10-05T15:00:00+0300"},
     }
-    api = FakeApi(day2, details)
+    extra = {
+        mm.AI_QUERY: [item(20, name="AI-инженер (JS)", published="2026-10-05T07:00:00+0300"),
+                      item(21, name="Senior AI developer (Python)", published="2026-10-05T07:00:00+0300")],
+        mm.FULL_NODE_QUERY: [item(8, name="Fullstack (React + Node.js)", published="2026-10-05T15:00:00+0300")],
+    }
+    api = FakeApi(day2, details, extra)
     sent.clear()
     mm.run(api, store, now=NOW, send=sent.append, sleep=lambda s: None)
 
@@ -407,7 +528,9 @@ def test_run_two_days_end_to_end(tmp_path):
     detail_paths = [p for p, _ in api.calls if p.startswith("/vacancies/")]
     assert "/vacancies/1" not in detail_paths  # вне окна — карточка не нужна
     last = store.last_run()
-    assert last.run_at == NOW and last.front_total == 4 and last.js_total == 5
+    assert "Fullstack: <b>1</b> · с Node.js 1" in s
+    assert "AI-инженеры на JS/TS 1" in s and "всего AI-вакансий в IT: 2" in s
+    assert last.run_at == NOW and last.front_total == 4 and last.js_total == 6  # + ai_js
 
 
 def _http_error(status, body):
