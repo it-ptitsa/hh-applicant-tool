@@ -77,6 +77,7 @@ REQUEST_DELAY = 0.3
 NEW_AGE_DAYS = 1         # создана меньше суток назад — новая (модерация бывает часами)
 REOPEN_AGE_DAYS = 30
 CLOSE_AFTER_DAYS = 3     # нет в выдаче 3 дня подряд — закрыта
+EXPIRE_DAYS = 30         # публикация hh живёт 30 дней: ушла из выдачи после этого — истёк срок, закрыта сразу
 ANCHOR_DAYS = 31         # на сколько дней назад держим опорные точки (дальше поиск hh не отдаёт)
 ANCHOR_HOUR = 12         # окно 12:00–13:00 МСК: рабочее время, публикаций много
 COMPLETENESS = 0.98      # собрано меньше 98% найденного — отчёт не пересылать
@@ -515,9 +516,12 @@ class Report:
     bumped: list[tuple[Vacancy, float]] = field(default_factory=list)
     reopened: list[tuple[Vacancy, float]] = field(default_factory=list)
     unknown: list[Vacancy] = field(default_factory=list)
-    closed: list[ClosedVacancy] = field(default_factory=list)
+    closed: list[ClosedVacancy] = field(default_factory=list)    # нет 3 дня подряд (без истёкших)
+    expired: list[ClosedVacancy] = field(default_factory=list)   # ушли сегодня, публикации ≥ 30 дней
     hidden: list[tuple[str, str]] = field(default_factory=list)
     history_days: int = 0
+    # движение по направлению к прошлому снимку: new, returned, expired, vanished, switched (±)
+    flow: dict[str, Counter] | None = None
 
     def of(self, cat: str) -> list[Vacancy]:
         return [v for v in self.listing if v.category == cat]
@@ -578,9 +582,19 @@ def _stack_short(vs: list[Vacancy]) -> str:
 
 
 def _table(rows: list[tuple[str, list[str]]]) -> str:
-    head = f"{'':12}{'новые':>6}{'подняли':>8}{'переоткр':>9}{'закрыты':>8}{'прирост':>8}"
-    body = [f"{name:12}{c[0]:>6}{c[1]:>8}{c[2]:>9}{c[3]:>8}{c[4]:>8}" for name, c in rows]
-    return "<pre>" + "\n".join([head, *body]) + "</pre>"
+    """Строка складывается: новые + вернулись − истёк срок − пропали = прирост."""
+    head1 = f"{'':12}{'пришли':^16}{'ушли':^16}{'итог':>8}"
+    head2 = f"{'':12}{'новые':>6}{'вернулись':>10}{'истёк':>7}{'пропали':>9}{'прирост':>8}"
+    body = [f"{name:12}{c[0]:>6}{c[1]:>10}{c[2]:>7}{c[3]:>9}{c[4]:>8}" for name, c in rows]
+    return "<pre>" + "\n".join([head1, head2, *body]) + "</pre>"
+
+
+def _signed(n: int) -> str:
+    return f"{n:+d}" if n else "0"
+
+
+def flow_growth(f: Counter) -> int:
+    return f["new"] + f["returned"] - f["expired"] - f["vanished"] + f["switched"]
 
 
 def quality_checks(r: Report) -> list[str]:
@@ -600,6 +614,11 @@ def quality_checks(r: Report) -> list[str]:
     front = r.of("front")
     if sum(Counter(v.primary_stack for v in front).values()) != len(front):
         out.append("стек фронта не сходится с итогом")
+    if r.prev and r.flow:
+        for cat, label in DIRECTIONS:
+            growth = len(r.of(cat)) - r.prev.get(cat, 0)
+            if flow_growth(r.flow.get(cat, Counter())) != growth:
+                out.append(f"{label}: пришли/ушли не сходятся с приростом {growth:+d}")
     return out
 
 
@@ -631,26 +650,42 @@ def build_daily(r: Report) -> list[str]:
     if r.prev is None:
         lines += ["<i>Первый снимок — изменения за сутки появятся завтра.</i>", ""]
 
-    rows = []
+    rows, switched = [], []
     for cat, label in DIRECTIONS:
-        k = lambda events: sum(v.category == cat for v, _ in events)  # noqa: E731
-        closed = sum(c.category == cat for c in r.closed) if r.history_days >= CLOSE_AFTER_DAYS else "—"
-        growth = f"{len(r.of(cat)) - prev.get(cat, 0):+d}".replace("+0", "0") if r.prev else "—"
-        rows.append((label, [str(k(r.new)), str(k(r.bumped)), str(k(r.reopened)), str(closed), growth]))
+        f = (r.flow or {}).get(cat, Counter())
+        if r.prev and r.flow is not None:
+            rows.append((label, [str(f["new"]), str(f["returned"]), str(f["expired"]), str(f["vanished"]),
+                                 _signed(len(r.of(cat)) - r.prev.get(cat, 0))]))
+            if f["switched"]:
+                switched.append(f"{label.lower()} {_signed(f['switched'])}")
+        else:  # первый снимок: сравнивать не с чем
+            rows.append((label, [str(sum(v.category == cat for v, _ in r.new)), "—", "—", "—", "—"]))
     lines += [f"<b>За сутки</b> ({_fmt_dt(r.window_start)} → {_fmt_dt(r.now)}):", _table(rows)]
+    if switched:
+        lines.append("Сменили категорию (входит в прирост): " + " · ".join(switched))
 
-    notes = []
-    f_reopened = [a for v, a in r.reopened if v.category in JS_MARKET]
-    if f_reopened:
-        notes.append(f"Переоткрытые — медиана возраста {round(statistics.median(f_reopened))} дн.")
-    lifetimes = [c.lifetime_days for c in r.closed if c.category in JS_MARKET and c.lifetime_days is not None]
+    refreshed = []
+    for cat, label in DIRECTIONS:
+        b = sum(v.category == cat for v, _ in r.bumped)
+        o = sum(v.category == cat for v, _ in r.reopened)
+        if b or o:
+            refreshed.append(f"{label.lower()} — подняли {b}, переоткрыли {o}")
+    if refreshed:
+        line = "Освежили дату (в приросте не участвуют): " + "; ".join(refreshed)
+        f_reopened = [a for v, a in r.reopened if v.category in JS_MARKET]
+        if f_reopened:
+            line += f". Переоткрытые — медиана возраста {round(statistics.median(f_reopened))} дн."
+        lines.append(line)
+    if r.history_days >= CLOSE_AFTER_DAYS:
+        fin = [f"{label.lower()} {n}" for cat, label in DIRECTIONS
+               if (n := sum(c.category == cat for c in r.closed))]
+        lines.append(f"Закрыты окончательно (нет {CLOSE_AFTER_DAYS} дня подряд): " + (" · ".join(fin) or "0"))
+    lifetimes = [c.lifetime_days for c in r.closed + r.expired
+                 if c.category in JS_MARKET and c.lifetime_days is not None]
     if lifetimes:
-        notes.append(f"закрытые прожили в среднем {round(statistics.mean(lifetimes))} дн.")
-    if notes:
-        lines.append(" · ".join(notes))
-    if r.history_days < CLOSE_AFTER_DAYS:
-        lines.append(f"<i>Закрытые считаем, когда вакансии нет {CLOSE_AFTER_DAYS} дня подряд —"
-                     " закрытия появятся, когда накопится история.</i>")
+        lines.append(f"Закрытые прожили в среднем {round(statistics.mean(lifetimes))} дн.")
+    lines.append(f"<i>«Истёк срок» — публикации {EXPIRE_DAYS}+ дней ушли из выдачи (закрыты). «Пропали» —"
+                 f" ждём {CLOSE_AFTER_DAYS} дня: часть вернётся, остальные станут закрытыми.</i>")
     f_new = [v for v, _ in r.new if v.category == "front"]
     hidden = sum(cat in JS_MARKET for _, cat in r.hidden)
     lines.append(f"Временно скрыты из поиска: {hidden} · новых уникальных позиций во фронте:"
@@ -915,7 +950,7 @@ class Store:
                 [(run_id, v.id, "new", v.category, age(a)) for v, a in r.new]
                 + [(run_id, v.id, "bumped", v.category, age(a)) for v, a in r.bumped]
                 + [(run_id, v.id, "reopened", v.category, age(a)) for v, a in r.reopened]
-                + [(run_id, c.id, "closed", c.category, c.lifetime_days) for c in r.closed]
+                + [(run_id, c.id, "closed", c.category, c.lifetime_days) for c in r.closed + r.expired]
                 + [(run_id, vid, "hidden", cat, None) for vid, cat in r.hidden]
             )
             self.db.executemany("INSERT INTO events VALUES (?,?,?,?,?)", events)
@@ -1008,6 +1043,10 @@ def load_golden() -> set[str]:
 # ── сценарий ────────────────────────────────────────────────────────────
 
 
+def _expired(published_at: str, at: datetime) -> bool:
+    return at - datetime.fromisoformat(published_at) >= timedelta(days=EXPIRE_DAYS)
+
+
 def build_report(api, store: Store, now: datetime, sleep) -> tuple[Report, dict[str, int]]:
     last = store.last_run()
     start = last.run_at if last else now - timedelta(hours=24)
@@ -1036,8 +1075,11 @@ def build_report(api, store: Store, now: datetime, sleep) -> tuple[Report, dict[
     if closed_ids:
         base_id, base_t = history[-CLOSE_AFTER_DAYS]
         rows = {row["vacancy_id"]: row for row in store.snapshot_rows(base_id)}
+        first_absent_t = history[-(CLOSE_AFTER_DAYS - 1)][1] if CLOSE_AFTER_DAYS > 1 else now
         for vid in closed_ids:
             row = rows[vid]
+            if _expired(row["published_at"], first_absent_t):
+                continue  # посчитана как «истёк срок» в день исчезновения
             cat = recategorize(row["name"], row["category"], row["it_role"])
             est = anchors.created(int(vid)).estimate
             life = (base_t - est).days if est else None
@@ -1046,15 +1088,41 @@ def build_report(api, store: Store, now: datetime, sleep) -> tuple[Report, dict[
         cats: dict[str, str] = {}
         for rid, _ in history[-(CLOSE_AFTER_DAYS - 1):]:
             for row in store.snapshot_rows(rid):
-                if row["vacancy_id"] in hidden_ids:
+                if row["vacancy_id"] in hidden_ids and not _expired(row["published_at"], now):
                     cats[row["vacancy_id"]] = recategorize(row["name"], row["category"], row["it_role"])
-        hidden = [(vid, cats.get(vid, "other")) for vid in hidden_ids]
+        hidden = [(vid, cat) for vid, cat in cats.items()]
+
+    prev, flow, expired = None, None, []
+    if last:
+        ov = store.overrides()
+        prev_rows = {row["vacancy_id"]: row for row in store.snapshot_rows(last.id)}
+        pcat = {vid: ov.get(row["name"], (None,))[0] or recategorize(row["name"], row["category"], row["it_role"])
+                for vid, row in prev_rows.items()}
+        tcat = {v.id: v.category for v in listing}
+        new_ids = {v.id for v, _ in new}
+        prev = dict(Counter(pcat.values()))
+        flow = {c: Counter() for c in JS_MARKET}
+        for vid, c in tcat.items():
+            if c in JS_MARKET and pcat.get(vid) != c:
+                flow[c]["switched" if vid in pcat else "new" if vid in new_ids else "returned"] += 1
+        for vid, c in pcat.items():
+            if c not in JS_MARKET or tcat.get(vid) == c:
+                continue
+            if vid in tcat:
+                flow[c]["switched"] -= 1
+            elif _expired(prev_rows[vid]["published_at"], now):
+                flow[c]["expired"] += 1
+                est = anchors.created(int(vid)).estimate
+                row = prev_rows[vid]
+                expired.append(ClosedVacancy(vid, row["name"], row["employer"], c,
+                                             (last.run_at - est).days if est else None))
+            else:
+                flow[c]["vanished"] += 1
 
     report = Report(
-        now=now, window_start=start, listing=listing, found=found, collected=collected,
-        prev=store.recount(last.id) if last else None,
-        new=new, bumped=bumped, reopened=reopened, unknown=unknown, closed=closed, hidden=hidden,
-        history_days=len(days),
+        now=now, window_start=start, listing=listing, found=found, collected=collected, prev=prev,
+        new=new, bumped=bumped, reopened=reopened, unknown=unknown, closed=closed, expired=expired,
+        hidden=hidden, history_days=len(days), flow=flow,
     )
     return report, it_role_of
 

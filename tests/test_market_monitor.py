@@ -392,7 +392,11 @@ def _daily(**kw):
         new=[(listing[0], 0.1), (listing[3], 0.0), (listing[5], 0.2), (listing[7], 0.0)],
         bumped=[(listing[1], 3)], reopened=[(listing[2], 45)], unknown=[],
         closed=[mm.ClosedVacancy("90", "Frontend (Angular)", "Озон", "front", 24)],
+        expired=[mm.ClosedVacancy("93", "Frontend (Vue)", "Сбер", "front", 40)],
         hidden=[("91", "front"), ("92", "fullstack")], history_days=3,
+        # прирост = новые + вернулись − истёк срок − пропали: фронт 2+0−1−0 = +1, fullstack 1−1 = 0, AI 1 = +1
+        flow={"front": mm.Counter(new=2, expired=1), "fullstack": mm.Counter(new=1, vanished=1),
+              "ai_js": mm.Counter(new=1)},
     )
     base.update(kw)
     return mm.Report(**base)
@@ -415,18 +419,35 @@ def test_daily_stack_lines_sum_to_front():
     assert stack == 5
 
 
-def test_daily_flow_table_by_direction():
+def _rows(text):
+    body = text.split("<pre>")[1].split("</pre>")[0].strip().splitlines()[2:]
+    return {" ".join(line.split()[:-5]).split()[0]: line.split()[-5:] for line in body}
+
+
+def test_daily_flow_table_adds_up():
+    """08.10 Александр: «почему нет закрытых, а рост отрицательный?» — строка обязана складываться."""
     text = mm.build_daily(_daily())[0]
-    rows = {line.split()[0]: line.split()[1:] for line in text.split("<pre>")[1].split("</pre>")[0].strip().splitlines()[1:]}
-    assert rows["Фронтенд"] == ["2", "1", "1", "1", "+1"]   # новые, подняли, переоткр., закрыты, прирост
-    assert rows["Fullstack"] == ["1", "0", "0", "0", "0"]
+    rows = _rows(text)
+    assert rows["Фронтенд"] == ["2", "0", "1", "0", "+1"]   # новые, вернулись, истёк срок, пропали, прирост
+    assert rows["Fullstack"] == ["1", "0", "0", "1", "0"]
+    for r in rows.values():
+        n, back, exp, gone, growth = r
+        assert int(n) + int(back) - int(exp) - int(gone) == int(growth)
+
+
+def test_daily_refreshed_and_closed_lines():
+    text = mm.build_daily(_daily())[0]
+    assert "Освежили дату" in text and "фронтенд — подняли 1, переоткрыли 1" in text
+    assert "медиана возраста 45 дн." in text
+    assert "Закрыты окончательно (нет 3 дня подряд): фронтенд 1" in text
+    assert "прожили в среднем 32 дн." in text      # (24 + 40) / 2
     assert "Временно скрыты из поиска: 2" in text
-    assert "медиана возраста 45 дн." in text and "прожили в среднем 24 дн." in text
 
 
-def test_daily_closures_placeholder_until_three_days_of_history():
-    text = mm.build_daily(_daily(history_days=1, closed=[]))[0]
-    assert "закрытия появятся" in text
+def test_flow_mismatch_fails_check():
+    bad = {"front": mm.Counter(new=5), "fullstack": mm.Counter(new=1, vanished=1), "ai_js": mm.Counter(new=1)}
+    text = mm.build_daily(_daily(flow=bad))[0]
+    assert text.startswith("⚠️ <b>Не пересылать") and "Фронтенд" in text and "не сходятся" in text
 
 
 def test_daily_who_came_without_salaries_with_leads():
@@ -526,8 +547,9 @@ def test_run_four_days_end_to_end(tmp_path):
     keep = _it("2026-10-01T10:00:00+0300", name="Frontend (Vue)")
     flick = _it("2026-10-01T11:00:00+0300", name="Frontend (Angular)")
     gone = _it("2026-10-01T12:00:00+0300", name="Frontend (React)", employer="Озон")
+    old = _it("2026-09-02T10:00:00+0300", name="Frontend (Svelte)")  # публикация истечёт ко дню 2
     d1 = datetime(2026, 10, 3, 8, 0, tzinfo=MSK)
-    api = _day([keep, flick, gone], d1, store, sent)
+    api = _day([keep, flick, gone, old], d1, store, sent)
     assert "Первый снимок" in sent[0]
     assert len([c for c in api.calls if c[0] == "/vacancies" and "text" not in c[1]]) == mm.ANCHOR_DAYS + 1  # 31 день + «сейчас»
 
@@ -540,9 +562,10 @@ def test_run_four_days_end_to_end(tmp_path):
     sent.clear()
     api = _day([keep, new, bumped, reopened], d2, store, sent)
     assert len([c for c in api.calls if c[0] == "/vacancies" and "text" not in c[1]]) == 2  # докачан лишь вчерашний день + «сейчас»
-    rows = {l.split()[0]: l.split()[1:] for l in sent[0].split("<pre>")[1].split("</pre>")[0].strip().splitlines()[1:]}
-    assert rows["Фронтенд"][:3] == ["1", "1", "1"]
-    assert "Временно скрыты из поиска: 2" in sent[0] and "закрытия появятся" in sent[0]
+    rows = _rows(sent[0])
+    # пришли: new — новая, bumped и reopened — вернулись; ушли: old — истёк срок (32 дня), flick и gone — пропали
+    assert rows["Фронтенд"] == ["1", "2", "1", "2", "0"]
+    assert "Временно скрыты из поиска: 2" in sent[0]  # old не скрыта — у неё истёк срок
 
     d3 = datetime(2026, 10, 5, 8, 0, tzinfo=MSK)
     sent.clear()
@@ -552,8 +575,7 @@ def test_run_four_days_end_to_end(tmp_path):
     d4 = datetime(2026, 10, 6, 8, 0, tzinfo=MSK)
     sent.clear()
     _day([keep, flick, new, bumped, reopened], d4, store, sent)
-    rows = {l.split()[0]: l.split()[1:] for l in sent[0].split("<pre>")[1].split("</pre>")[0].strip().splitlines()[1:]}
-    assert rows["Фронтенд"][3] == "1"  # gone: нет 3 дня подряд — закрыта; flick — нет
+    assert "Закрыты окончательно (нет 3 дня подряд): фронтенд 1" in sent[0]  # gone; old уже посчитана как «истёк срок»
     assert "прожили в среднем" in sent[0]
     assert store.last_run().front_total == 5
 
