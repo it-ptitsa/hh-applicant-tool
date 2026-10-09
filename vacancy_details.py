@@ -106,7 +106,7 @@ def live_get_and_solve():
     from hh_applicant_tool.main import HHApplicantTool
 
     tool = HHApplicantTool()
-    tool.config_dir = tool.profile_id = tool.proxy_url = tool.openai_proxy_url = None
+    tool._parser.parse_args(["whoami"], namespace=tool)  # умолчания CLI: таймауты, прокси, профиль (CONFIG_DIR)
     token = tool.config["token"]["access_token"]
     headers = {"Authorization": f"Bearer {token}", "HH-User-Agent": "hh-market/1.0 (sashapticin@gmail.com)"}
 
