@@ -581,12 +581,28 @@ def _stack_short(vs: list[Vacancy]) -> str:
     return " · ".join(f"{('JS/TS' if k == 'js' else label)} {st[k]}" for k, label in STACK_LABEL if st[k])
 
 
-def _table(rows: list[tuple[str, list[str]]]) -> str:
-    """Строка складывается: новые + вернулись − истёк срок − пропали = прирост."""
-    head1 = f"{'':12}{'пришли':^16}{'ушли':^16}{'итог':>8}"
-    head2 = f"{'':12}{'новые':>6}{'вернулись':>10}{'истёк':>7}{'пропали':>9}{'прирост':>8}"
-    body = [f"{name:12}{c[0]:>6}{c[1]:>10}{c[2]:>7}{c[3]:>9}{c[4]:>8}" for name, c in rows]
-    return "<pre>" + "\n".join([head1, head2, *body]) + "</pre>"
+def _minus(n: int) -> str:
+    return f"+{n}" if n > 0 else (f"−{-n}" if n < 0 else "0")
+
+
+def _flow_line(label: str, growth: int, f: Counter) -> str:
+    """«Фронтенд −7 = 13 новых + 2 вернулись − 7 истёк срок − 15 пропали».
+
+    Строкой, а не таблицей: <pre> в Telegram на телефоне переносится и колонки разъезжаются (08.10).
+    """
+    word = lambda n, one, many: one if n == 1 else many  # noqa: E731
+    terms = [(f["new"], word(f["new"], "новая", "новых")),
+             (f["returned"], word(f["returned"], "вернулась", "вернулись")),
+             (-f["expired"], "истёк срок"),
+             (-f["vanished"], word(f["vanished"], "пропала", "пропали")),
+             (f["switched"], "сменили категорию")]
+    parts = []
+    for n, what in terms:
+        if not n:
+            continue
+        sign = "" if not parts and n > 0 else (" + " if n > 0 else (" − " if parts else "−"))
+        parts.append(f"{sign}{abs(n)} {what}")
+    return f"{label} <b>{_minus(growth)}</b>" + (" = " + "".join(parts) if parts else "")
 
 
 def _signed(n: int) -> str:
@@ -650,19 +666,13 @@ def build_daily(r: Report) -> list[str]:
     if r.prev is None:
         lines += ["<i>Первый снимок — изменения за сутки появятся завтра.</i>", ""]
 
-    rows, switched = [], []
+    flow_lines = []
     for cat, label in DIRECTIONS:
-        f = (r.flow or {}).get(cat, Counter())
         if r.prev and r.flow is not None:
-            rows.append((label, [str(f["new"]), str(f["returned"]), str(f["expired"]), str(f["vanished"]),
-                                 _signed(len(r.of(cat)) - r.prev.get(cat, 0))]))
-            if f["switched"]:
-                switched.append(f"{label.lower()} {_signed(f['switched'])}")
+            flow_lines.append(_flow_line(label, len(r.of(cat)) - r.prev.get(cat, 0), r.flow.get(cat, Counter())))
         else:  # первый снимок: сравнивать не с чем
-            rows.append((label, [str(sum(v.category == cat for v, _ in r.new)), "—", "—", "—", "—"]))
-    lines += [f"<b>За сутки</b> ({_fmt_dt(r.window_start)} → {_fmt_dt(r.now)}):", _table(rows)]
-    if switched:
-        lines.append("Сменили категорию (входит в прирост): " + " · ".join(switched))
+            flow_lines.append(f"{label}: новых {sum(v.category == cat for v, _ in r.new)}")
+    lines += [f"<b>За сутки</b> ({_fmt_dt(r.window_start)} → {_fmt_dt(r.now)}):", *flow_lines]
 
     refreshed = []
     for cat, label in DIRECTIONS:
@@ -1223,8 +1233,8 @@ def build_weekly(store: Store, now: datetime) -> list[str]:
     rows = []
     for cat, label in DIRECTIONS:
         fl = w["flows"][cat]
-        rows.append((label, [str(fl["new"]), str(fl["bumped"]), str(fl["reopened"]), str(fl["closed"]),
-                             f"{c1[cat] - c0[cat]:+d}".replace("+0", "0")]))
+        rows.append(f"{label} <b>{_minus(c1[cat] - c0[cat])}</b>: новых {fl['new']} · закрыто {fl['closed']}"
+                    f" · подняли {fl['bumped']} · переоткрыли {fl['reopened']}")
     by_day = w["new_by_weekday"]
     lines = [
         f"📈 <b>JS-рынок на hh · неделя {first.astimezone(MSK).strftime('%d.%m')}–"
@@ -1240,7 +1250,7 @@ def build_weekly(store: Store, now: datetime) -> list[str]:
         f"• AI-инженеры на JS/TS: {c0['ai_js']} → <b>{c1['ai_js']}</b> ({c1['ai_js'] - c0['ai_js']:+d})",
         "",
         "<b>Поток за неделю:</b>",
-        _table(rows),
+        *rows,
         "Новые во фронте по дням: " + " · ".join(f"{WEEKDAYS[d]} {by_day[d]}" for d in range(7)),
     ]
     if w["lifetimes"]:
