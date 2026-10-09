@@ -758,6 +758,10 @@ CREATE TABLE IF NOT EXISTS id_anchors (
     max_id INTEGER NOT NULL, at TEXT NOT NULL, source TEXT NOT NULL,
     PRIMARY KEY (source, at)
 );
+CREATE TABLE IF NOT EXISTS vacancy_detail (
+    vacancy_id TEXT PRIMARY KEY, fetched_at TEXT NOT NULL, status INTEGER NOT NULL,
+    name TEXT, employer TEXT, experience TEXT, key_skills TEXT, description_text TEXT, raw TEXT
+);
 CREATE TABLE IF NOT EXISTS title_review (
     name TEXT PRIMARY KEY, auto_category TEXT, auto_grade TEXT, first_seen TEXT,
     agent_category TEXT, agent_grade TEXT, final_category TEXT, final_grade TEXT,
@@ -854,6 +858,30 @@ class Store:
         with self.db:
             self.db.executemany("INSERT OR REPLACE INTO id_anchors VALUES (?, ?, ?)",
                                 [(int(i), t.isoformat(), s) for i, t, s in points])
+
+    # полные карточки (vacancy_details.py)
+    def save_detail(self, vid: str, status: int, card: dict | None, now: datetime) -> None:
+        from vacancy_details import html_to_text
+        c = card or {}
+        with self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO vacancy_detail VALUES (?,?,?,?,?,?,?,?,?)",
+                (vid, now.isoformat(), status, c.get("name"), (c.get("employer") or {}).get("name"),
+                 (c.get("experience") or {}).get("id"),
+                 json.dumps([k["name"] for k in c.get("key_skills") or []], ensure_ascii=False),
+                 html_to_text(c.get("description") or ""), json.dumps(c, ensure_ascii=False) if c else None))
+
+    def detail(self, vid: str) -> dict | None:
+        self.db.row_factory = sqlite3.Row
+        try:
+            row = self.db.execute("SELECT * FROM vacancy_detail WHERE vacancy_id = ?", (vid,)).fetchone()
+        finally:
+            self.db.row_factory = None
+        if row is None:
+            return None
+        d = dict(row)
+        d["key_skills"] = json.loads(d["key_skills"] or "[]")
+        return d
 
     # проверка названий
     def record_titles(self, vacancies: Iterable[Vacancy], golden: set[str], now: datetime) -> None:
@@ -1293,10 +1321,16 @@ def main() -> None:
     parser.add_argument("--review-recheck", action="store_true", help="пересчитать сверку текущим классификатором")
     parser.add_argument("--disputes", action="store_true", help="JSON: спорные названия")
     parser.add_argument("--note", help="отправить текст в бот (вывод недели от агента)")
+    parser.add_argument("--fetch-details", type=int, metavar="N",
+                        help="собрать до N полных карточек пилота (vacancy_details.py)")
     parser.add_argument("--note-file", type=Path, help="отправить в бот текст из файла (UTF-8, HTML)")
     args = parser.parse_args()
     sender = (lambda text: print(text, end="\n\n")) if args.dry_run else send
     store = Store(args.db)
+    if args.fetch_details:
+        import vacancy_details
+        vacancy_details.main(["--db", str(args.db), "--limit", str(args.fetch_details)])
+        return
     if args.weekly:
         for m in build_weekly(store, datetime.now(MSK)):
             sender(m)
