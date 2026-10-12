@@ -1,15 +1,17 @@
 #!/bin/bash
 # Утренняя рассылка откликов (крон хоста, будни 06:00 UTC).
 # Данные аккаунта вне git: id резюме — apply.env (образец apply.env.example), письмо — config/letter.txt.
+# RESUME_ID переопределяет резюме, лишние аргументы уходят в apply-vacancies (так apply_multi.sh
+# запускает переотклик остальными резюме).
 set -euo pipefail
 cd /opt/hh-applicant-tool
 set -a; . ./apply.env; set +a
 docker compose run --rm -T -u docker hh_applicant_tool python -m hh_applicant_tool -v apply-vacancies \
-  --resume-id "$HH_RESUME_ID" \
+  --resume-id "${RESUME_ID:-$HH_RESUME_ID}" \
   --ai -f -L /app/config/letter.txt \
   --system-prompt "$(cat /opt/hh-applicant-tool/cover_letter_prompt.txt)" \
   --message-prompt "Адаптируй базовое письмо ниже под эту вакансию по правилам из системного промпта." \
   --search '(NAME:(frontend OR "frontend developer" OR фронтенд OR react OR typescript OR "next.js")) AND NOT NAME:("full stack" OR fullstack OR backend OR python OR golang OR QA OR "Team Lead" OR vue OR angular)' \
   --per-page 100 --total-pages 5 \
   --order-by publication_time --period 2 \
-  --apply-delay-min 30 --apply-delay-max 80
+  --apply-delay-min 30 --apply-delay-max 80 "$@"

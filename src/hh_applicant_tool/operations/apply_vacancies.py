@@ -9,7 +9,7 @@ import random
 import re
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from itertools import chain
 from pathlib import Path
@@ -205,6 +205,12 @@ class Operation(BaseOperation):
             "--reapply-states",
             help="Статусы прошлых откликов для --reapply-rejected (id из hh): discard — отказ, response — без ответа, invitation — приглашение. По умолчанию discard.",  # noqa: E501
             nargs="+",
+            default=None,
+        )
+        parser.add_argument(
+            "--reapply-since-days",
+            help="Для --reapply-rejected: только отклики аккаунта не старше N дней. Нужен, чтобы переоткликать вторым резюме вакансии, на которые сегодня откликнулись первым, а не всю историю аккаунта.",  # noqa: E501
+            type=int,
             default=None,
         )
         parser.add_argument(
@@ -531,6 +537,7 @@ class Operation(BaseOperation):
         self.reapply_rejected = args.reapply_rejected
         self.reapply_experience = args.reapply_experience
         self.reapply_states = args.reapply_states
+        self.reapply_since_days = args.reapply_since_days
         self.sort_point_lat = args.sort_point_lat
         self.sort_point_lng = args.sort_point_lng
         self.top_lat = args.top_lat
@@ -2345,6 +2352,12 @@ class Operation(BaseOperation):
         already_applied: set[str] = set()
         # getattr: Operation без парсера (тесты) флага не знает
         states = set(getattr(self, "reapply_states", None) or ["discard"])
+        since_days = getattr(self, "reapply_since_days", None)
+        cutoff = None
+        if since_days:
+            now = getattr(self, "_now", None)
+            now = now() if now else datetime.now(timezone.utc)
+            cutoff = now - timedelta(days=since_days)
 
         page = 0
         while True:
@@ -2358,6 +2371,13 @@ class Operation(BaseOperation):
                     continue
                 if (item.get("resume") or {}).get("id") == resume_id:
                     already_applied.add(vacancy_id)
+                if cutoff is not None:
+                    created = item.get("created_at") or item.get("updated_at")
+                    try:
+                        if not created or datetime.strptime(created, "%Y-%m-%dT%H:%M:%S%z") < cutoff:
+                            continue
+                    except ValueError:
+                        continue
                 if (item.get("state") or {}).get("id") in states:
                     # Архивные отсекаем по данным отклика, не запрашивая
                     # вакансию: залп из сотен GET /vacancies ловит каптчу

@@ -147,3 +147,32 @@ def test_unsolved_captcha_on_read_skips_vacancy():
 
     op._solve_captcha_async = fake_solve
     assert _ids(op) == ["3"]
+
+
+# --- окно по давности (12.10.2026: эксперимент «все резюме на каждую вакансию») ---------
+# Без окна переотклик берёт всю историю аккаунта — сотни старых вакансий — и выбирает
+# дневной лимит на них. С --reapply-since-days N — только отклики не старше N дней.
+
+
+def _neg_at(vid, created, state="response", resume="old"):
+    return {"vacancy": {"id": vid}, "state": {"id": state}, "resume": {"id": resume}, "created_at": created}
+
+
+def test_since_days_keeps_only_recent_negotiations():
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime(2026, 10, 13, 9, 0, tzinfo=timezone.utc)
+    negs = [_neg_at("1", "2026-10-13T08:00:00+0300"), _neg_at("2", "2026-10-11T08:00:00+0300"),
+            _neg_at("3", "2026-09-01T08:00:00+0300")]
+    op = _op(FakeApi(negs, {v: _vac(v) for v in "123"}), ["response"])
+    op.reapply_since_days = 1
+    op._now = lambda: now
+    assert _ids(op) == ["1"]
+    op.reapply_since_days = 3
+    assert _ids(op) == ["1", "2"]
+
+
+def test_without_since_days_history_is_unlimited():
+    negs = [_neg_at("1", "2026-10-13T08:00:00+0300"), _neg_at("3", "2026-09-01T08:00:00+0300")]
+    op = _op(FakeApi(negs, {v: _vac(v) for v in "13"}), ["response"])
+    assert _ids(op) == ["1", "3"]
