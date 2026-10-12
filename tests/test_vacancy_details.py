@@ -44,18 +44,23 @@ def store(tmp_path):
     return s
 
 
-def test_targets_are_front_react_and_vue_without_card(store):
-    assert vd.targets(store) == ["1", "2", "6"]          # Angular, React Native и fullstack — не в пилоте
+def test_pilot_targets_are_front_react_and_vue_without_card(store):
+    assert vd.targets(store, scope="pilot") == ["1", "2", "6"]   # Angular, React Native и fullstack — не в пилоте
     store.save_detail("1", 200, card(1), NOW)
-    assert vd.targets(store) == ["2", "6"]
+    assert vd.targets(store, scope="pilot") == ["2", "6"]
+
+
+def test_default_targets_are_whole_front_and_fullstack(store):
+    """12.10: ученикам нужны и fullstack-аккаунты, и другие стеки — собираем весь фронт и fullstack на JS."""
+    assert vd.targets(store) == ["1", "2", "3", "4", "5", "6"]
 
 
 def test_collect_saves_cards_with_pause(store):
     pauses = []
     stats = vd.collect(store, get=lambda vid: (200, card(vid)), solve=lambda url: True,
                        sleep=pauses.append, now=NOW, limit=10)
-    assert stats == {"ok": 3, "gone": 0, "captcha_solved": 0}
-    assert len(pauses) == 3 and all(vd.PAUSE[0] <= p <= vd.PAUSE[1] for p in pauses)
+    assert stats == {"ok": 6, "gone": 0, "captcha_solved": 0}   # весь фронт и fullstack
+    assert len(pauses) == 6 and all(vd.PAUSE[0] <= p <= vd.PAUSE[1] for p in pauses)
     row = store.detail("1")
     assert row["key_skills"] == ["React", "TypeScript"] and "React" in row["description_text"]
     assert json.loads(row["raw"])["experience"]["id"] == "between1And3"
@@ -82,7 +87,7 @@ def test_captcha_solved_then_retried(store):
 
     stats = vd.collect(store, get=get, solve=lambda url: url.endswith("state=x"), sleep=lambda s: None,
                        now=NOW, limit=10)
-    assert stats == {"ok": 3, "gone": 0, "captcha_solved": 1}
+    assert stats == {"ok": 6, "gone": 0, "captcha_solved": 1}
 
 
 def test_unsolved_captcha_stops_and_keeps_progress(store):

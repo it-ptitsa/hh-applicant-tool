@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Полные карточки вакансий (описание, key_skills) для подбора групп резюме.
 
+12.10.2026: область расширена с пилота (фронт React/Vue) на весь фронт и fullstack на JS — для учеников.
+
 Пилот 09.10.2026 (идея Александра: 5 резюме под группы вакансий): фронтенд с основным стеком
 React или Vue из последнего снимка монитора. Почему так:
 - сайт hh без входа вакансии не показывает («Вам недоступна эта вакансия») — только API с токеном;
@@ -47,7 +49,13 @@ def html_to_text(s: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def targets(store: mm.Store, stacks=PILOT_STACKS) -> list[str]:
+SCOPES = {
+    "pilot": ({"front"}, PILOT_STACKS),               # 09.10: фронт React/Vue
+    "js": ({"front", "fullstack"}, None),             # 12.10: весь фронт и fullstack на JS — для учеников
+}
+
+
+def targets(store: mm.Store, scope: str = "js") -> list[str]:
     last = store.last_run()
     if last is None:
         return []
@@ -56,7 +64,8 @@ def targets(store: mm.Store, stacks=PILOT_STACKS) -> list[str]:
     for row in store.snapshot_rows(last.id):
         cat = mm.recategorize(row["name"], row["category"], row["it_role"])
         primary = (row["stack"] or "").split(",")[0]
-        if cat == "front" and primary in stacks and row["vacancy_id"] not in done:
+        cats, stacks = SCOPES[scope]
+        if cat in cats and (stacks is None or primary in stacks) and row["vacancy_id"] not in done:
             out.append(row["vacancy_id"])
     return sorted(out, key=int)
 
