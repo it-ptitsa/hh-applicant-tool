@@ -672,7 +672,7 @@ def build_daily(r: Report) -> list[str]:
         b = sum(v.category == cat for v, _ in r.bumped)
         o = sum(v.category == cat for v, _ in r.reopened)
         if b or o:
-            refreshed.append(f"{label.lower()} — подняли {b}, переоткрыли {o}")
+            refreshed.append(f"{label if label.startswith("AI") else label.lower()} — подняли {b}, переоткрыли {o}")
     if refreshed:
         line = "Освежили дату (в приросте не участвуют): " + "; ".join(refreshed)
         f_reopened = [a for v, a in r.reopened if v.category in JS_MARKET]
@@ -1258,7 +1258,7 @@ def build_weekly(store: Store, now: datetime) -> list[str]:
         table_rows.append(f"{short[cat]:10}{fl['new']:>5}{fl['closed']:>6}{_minus(other) if other else '0':>6}"
                           f"{_minus(total) if total else '0':>7}")
         if fl["bumped"] or fl["reopened"]:
-            refreshed.append(f"{label.lower()} — подняли {fl['bumped']}, переоткрыли {fl['reopened']}")
+            refreshed.append(f"{label if label.startswith("AI") else label.lower()} — подняли {fl['bumped']}, переоткрыли {fl['reopened']}")
     rows = [
         "<pre>" + "\n".join([f"{'':10}{'нов':>5}{'закр':>6}{'проч':>6}{'итог':>7}", *table_rows]) + "</pre>",
         "<i>нов — новые, закр — закрыты (истёк срок или нет 3 дня), проч — временно пропали или вернулись."
