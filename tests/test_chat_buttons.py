@@ -2,7 +2,8 @@
 
 Бот работодателя («Робот-рекрутер») задаёт вопрос с кнопками actions.text_buttons; свободный текст он не
 принимает. Веб-чат hh отправляет нажатие кнопки как сообщение с текстом кнопки и metadata.source =
-chat_text_button + messageId вопроса (POST chatik.hh.ru/chatik/api/send).
+chat_text_button + messageId вопроса (POST chatik.hh.ru/chatik/api/send). Через API с metadata — 500,
+поэтому отправляем точный текст кнопки обычным сообщением: бот его принимает.
 """
 
 import sys
@@ -45,8 +46,8 @@ def test_parse_choice():
     assert cb.parse_choice("не знаю", 2) is None
 
 
-def test_send_payload_marks_button_source():
+def test_send_payload_is_exact_button_text_without_metadata():
+    """12.10 вживую: с metadata (как в веб-чате) /chatik/api/send отвечает 500; точный текст кнопки
+    обычным сообщением — 200, и бот засчитывает ответ (завершил скрининг и вышел из чата)."""
     p = cb.send_payload(chat_id=5, message_id=2, text="да", key="k1")
-    assert p["chatId"] == 5 and p["text"] == "да" and p["idempotencyKey"] == "k1"
-    assert p["metadata"]["source"] == {"source_type": "chat_text_button"} and p["metadata"]["messageId"] == 2
-    assert p["metadata"]["chatType"] == "NEGOTIATION"
+    assert p == {"chatId": 5, "idempotencyKey": "k1", "text": "да"}

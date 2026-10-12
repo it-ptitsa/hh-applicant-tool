@@ -5,7 +5,7 @@
 текст. reply-employers видит только публичный API, где кнопок нет, и уводит такие чаты в «Анкета —
 обработай вручную». Этот модуль читает веб-чат (chatik.hh.ru) веб-сессией аккаунта, просит нейронку
 выбрать вариант по фактам резюме и настройкам кандидата и отправляет его так же, как нажатие кнопки:
-POST /chatik/api/send с metadata.source = chat_text_button (найдено в бандле веб-чата hh).
+POST /chatik/api/send точным текстом кнопки (проверено 12.10: бот принимает, завершает скрининг).
 
 Запуск в контейнере кликера: python /app/chat_buttons.py [--send]   (без --send — только показать)
 Настройки кандидата: /app/config/candidate_prefs.txt (формат, город, переезд, оформление и т. п.).
@@ -54,9 +54,9 @@ def parse_choice(answer: str, n: int) -> int | None:
 
 
 def send_payload(chat_id: int, message_id: int, text: str, key: str | None = None) -> dict:
-    return {"chatId": chat_id, "idempotencyKey": key or str(uuid.uuid4()), "text": text,
-            "metadata": {"source": {"source_type": "chat_text_button"}, "messageId": message_id,
-                         "chatType": "NEGOTIATION", "location": "chatik"}}
+    """Точный текст кнопки обычным сообщением. Пометку веб-чата (metadata.source = chat_text_button) не
+    передаём: через API с ней /chatik/api/send отвечает 500, а без неё бот ответ принимает (12.10.2026)."""
+    return {"chatId": chat_id, "idempotencyKey": key or str(uuid.uuid4()), "text": text}
 
 
 SYSTEM = """Ты отвечаешь роботу-рекрутеру работодателя от имени соискателя. Робот задаёт вопрос и даёт
@@ -120,8 +120,9 @@ def main() -> None:
             print(f"{'✅' if args.send else '🧪'} {url} | {q['question'][:90]} → «{q['options'][k]}»", flush=True)
             if args.send:
                 xsrf = next((c.value for c in s.cookies if c.name == "_xsrf"), "")
-                r = s.post(f"{CHATIK}/chatik/api/send", json=send_payload(q["chat_id"], q["message_id"], q["options"][k]),
-                           headers={"X-Xsrftoken": xsrf, "Content-Type": "application/json",
+                r = s.post(f"{CHATIK}/chatik/api/send", params={"hhtmSourceLabel": "chat", "hhtmSource": "chat"},
+                           json=send_payload(q["chat_id"], q["message_id"], q["options"][k]),
+                           headers={"X-Xsrftoken": xsrf, "Content-Type": "application/json", "Origin": CHATIK,
                                     "Referer": f"{CHATIK}/chat/{q['chat_id']}"}, timeout=30)
                 if r.status_code >= 300:
                     print(f"   ⚠️ отправка не прошла: {r.status_code} {r.text[:200]}", flush=True)
