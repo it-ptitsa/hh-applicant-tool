@@ -3,7 +3,7 @@
 set -uo pipefail
 cd /opt/hh-applicant-tool
 set -a; . ./digest.env; set +a
-out=$(/usr/bin/docker compose run --rm -T -u docker -e PYTHONPATH=/app/src:/app hh_applicant_tool python /app/chat_buttons.py --send 2>&1 | grep -vE "^time=|Container")
+out=$(/usr/bin/docker compose run --rm -T -u docker -e PYTHONPATH=/app/src:/app hh_applicant_tool python -m hh_applicant_tool answer-buttons --send 2>&1 | grep -vE "^time=|Container")
 echo "=== $(date "+%F %T")"; echo "$out"
 lines=$(grep -E "^(✅|⏸|   ⚠️)" <<<"$out" | head -30)
 [ -z "$lines" ] && exit 0
