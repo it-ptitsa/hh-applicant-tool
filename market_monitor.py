@@ -585,24 +585,12 @@ def _minus(n: int) -> str:
     return f"+{n}" if n > 0 else (f"−{-n}" if n < 0 else "0")
 
 
-def _flow_line(label: str, growth: int, f: Counter) -> str:
-    """«Фронтенд −7 = 13 новых + 2 вернулись − 7 истёк срок − 15 пропали».
-
-    Строкой, а не таблицей: <pre> в Telegram на телефоне переносится и колонки разъезжаются (08.10).
-    """
-    word = lambda n, one, many: one if n == 1 else many  # noqa: E731
-    terms = [(f["new"], word(f["new"], "новая", "новых")),
-             (f["returned"], word(f["returned"], "вернулась", "вернулись")),
-             (-f["expired"], "истёк срок"),
-             (-f["vanished"], word(f["vanished"], "пропала", "пропали")),
-             (f["switched"], "сменили категорию")]
-    parts = []
-    for n, what in terms:
-        if not n:
-            continue
-        sign = "" if not parts and n > 0 else (" + " if n > 0 else (" − " if parts else "−"))
-        parts.append(f"{sign}{abs(n)} {what}")
-    return f"{label} <b>{_minus(growth)}</b>" + (" = " + "".join(parts) if parts else "")
+def _flow_table(rows: list[tuple[str, list[int | str]]]) -> str:
+    """Узкая таблица (≤ 34 символов): широкая <pre> на телефоне переносилась и разъезжалась (08.10)."""
+    fmt = lambda n: n if isinstance(n, str) else _minus(n) if n else "0"  # noqa: E731
+    head = f"{'':10}{'нов':>4}{'вер':>4}{'ист':>4}{'проп':>5}{'итог':>6}"
+    body = [f"{name:10}{c[0]:>4}{c[1]:>4}{c[2]:>4}{c[3]:>5}{fmt(c[4]):>6}" for name, c in rows]
+    return "<pre>" + "\n".join([head, *body]) + "</pre>"
 
 
 def _signed(n: int) -> str:
@@ -666,13 +654,18 @@ def build_daily(r: Report) -> list[str]:
     if r.prev is None:
         lines += ["<i>Первый снимок — изменения за сутки появятся завтра.</i>", ""]
 
-    flow_lines = []
-    for cat, label in DIRECTIONS:
+    short = {"front": "Фронтенд", "fullstack": "Fullstack", "ai_js": "AI на JS"}
+    rows = []
+    for cat, _ in DIRECTIONS:
+        f = (r.flow or {}).get(cat, Counter())
         if r.prev and r.flow is not None:
-            flow_lines.append(_flow_line(label, len(r.of(cat)) - r.prev.get(cat, 0), r.flow.get(cat, Counter())))
+            rows.append((short[cat], [f["new"], f["returned"], f["expired"], f["vanished"] - f["switched"],
+                                      len(r.of(cat)) - r.prev.get(cat, 0)]))
         else:  # первый снимок: сравнивать не с чем
-            flow_lines.append(f"{label}: новых {sum(v.category == cat for v, _ in r.new)}")
-    lines += [f"<b>За сутки</b> ({_fmt_dt(r.window_start)} → {_fmt_dt(r.now)}):", *flow_lines]
+            rows.append((short[cat], [sum(v.category == cat for v, _ in r.new), "—", "—", "—", "—"]))
+    lines += [f"<b>За сутки</b> ({_fmt_dt(r.window_start)} → {_fmt_dt(r.now)}):", _flow_table(rows),
+              "<i>нов — новые, вер — вернулись, ист — истёк срок 30 дней (закрыты), проп — пропали"
+              " из выдачи. Итог = нов + вер − ист − проп.</i>"]
 
     refreshed = []
     for cat, label in DIRECTIONS:
@@ -694,8 +687,7 @@ def build_daily(r: Report) -> list[str]:
                  if c.category in JS_MARKET and c.lifetime_days is not None]
     if lifetimes:
         lines.append(f"Закрытые прожили в среднем {round(statistics.mean(lifetimes))} дн.")
-    lines.append(f"<i>«Истёк срок» — публикации {EXPIRE_DAYS}+ дней ушли из выдачи (закрыты). «Пропали» —"
-                 f" ждём {CLOSE_AFTER_DAYS} дня: часть вернётся, остальные станут закрытыми.</i>")
+    lines.append(f"<i>Пропавшие ждут {CLOSE_AFTER_DAYS} дня: часть вернётся, остальные станут закрытыми.</i>")
     f_new = [v for v, _ in r.new if v.category == "front"]
     hidden = sum(cat in JS_MARKET for _, cat in r.hidden)
     lines.append(f"Временно скрыты из поиска: {hidden} · новых уникальных позиций во фронте:"

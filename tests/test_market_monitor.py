@@ -420,31 +420,28 @@ def test_daily_stack_lines_sum_to_front():
 
 
 def _rows(text):
-    """«Фронтенд <b>+1</b> = 2 новых − 1 истёк срок» → {"Фронтенд": (1, {"новых": 2, "истёк срок": -1})}."""
-    import re as _re
+    """Узкая таблица в <pre>: «Фронтенд  13   2   7  15  −7» → {"Фронтенд": [13, 2, 7, 15, -7]}."""
+    body = text.split("<pre>")[1].split("</pre>")[0].splitlines()[1:]
     out = {}
-    for line in text.splitlines():
-        m = _re.match(r"^(Фронтенд|Fullstack|AI на JS/TS) <b>([+−]?\d+)</b>(?: = (.*))?$", line)
-        if not m:
-            continue
-        terms = {}
-        for sign, n, label in _re.findall(r"(^|[+−]) ?(\d+) ([^+−]+?)(?= [+−] |$)", m.group(3) or ""):
-            terms[label.strip()] = -int(n) if sign == "−" else int(n)
-        out[m.group(1)] = (int(m.group(2).replace("−", "-")), terms)
+    for line in body:
+        parts = line.split()
+        out[" ".join(parts[:-5])] = [int(x.replace("−", "-").replace("+", "")) for x in parts[-5:]]
     return out
 
 
 def test_daily_flow_table_adds_up():
-    """08.10 Александр: «почему нет закрытых, а рост отрицательный?» — строка обязана складываться."""
+    """08.10: «почему нет закрытых, а рост отрицательный?» — строка обязана складываться;
+    12.10: таблица нужна, но узкая — широкая на телефоне переносилась."""
     text = mm.build_daily(_daily())[0]
     rows = _rows(text)
-    assert "<pre>" not in text  # таблица в Telegram на телефоне переносится и разъезжается (08.10)
-    assert rows["Фронтенд"] == (1, {"новых": 2, "истёк срок": -1})
-    assert rows["Fullstack"] == (0, {"новая": 1, "пропала": -1})
-    assert rows["AI на JS/TS"] == (1, {"новая": 1})
-    for growth, terms in rows.values():
-        assert sum(terms.values()) == growth
-    assert all(len(l) <= 70 for l in text.splitlines() if l.startswith(("Фронтенд <b>", "Fullstack <b>")))
+    assert rows["Фронтенд"] == [2, 0, 1, 0, 1]     # новые, вернулись, истёк срок, пропали, итог
+    assert rows["Fullstack"] == [1, 0, 0, 1, 0]
+    assert rows["AI на JS"] == [1, 0, 0, 0, 1]
+    for n, back, exp, gone, total in rows.values():
+        assert n + back - exp - gone == total
+    table = text.split("<pre>")[1].split("</pre>")[0]
+    assert max(len(l) for l in table.splitlines()) <= 34   # влезает в экран телефона
+    assert "нов — новые" in text                           # расшифровка сокращений
 
 
 def test_daily_refreshed_and_closed_lines():
@@ -576,7 +573,7 @@ def test_run_four_days_end_to_end(tmp_path):
     assert len([c for c in api.calls if c[0] == "/vacancies" and "text" not in c[1]]) == 2  # докачан лишь вчерашний день + «сейчас»
     rows = _rows(sent[0])
     # пришли: new — новая, bumped и reopened — вернулись; ушли: old — истёк срок (32 дня), flick и gone — пропали
-    assert rows["Фронтенд"] == (0, {"новая": 1, "вернулись": 2, "истёк срок": -1, "пропали": -2})
+    assert rows["Фронтенд"] == [1, 2, 1, 2, 0]
     assert "Временно скрыты из поиска: 2" in sent[0]  # old не скрыта — у неё истёк срок
 
     d3 = datetime(2026, 10, 5, 8, 0, tzinfo=MSK)
