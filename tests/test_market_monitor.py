@@ -618,6 +618,12 @@ def test_weekly_report_from_history(tmp_path):
     assert "Фронтенд: 4 → <b>11</b> (+7)" in text
     assert "Новые во фронте по дням" in text
     assert "Nitka" in text and "1 позиция" in text
+    # 12.10 «а где табличка?» — недельная тоже таблицей, итог складывается из колонок
+    table = text.split("<pre>")[1].split("</pre>")[0]
+    assert max(len(l) for l in table.splitlines()) <= 34
+    for line in table.splitlines()[1:]:
+        n, closed, other, total = [int(x.replace("−", "-").replace("+", "")) for x in line.split()[-4:]]
+        assert n - closed + other == total
 
 
 def test_send_telegram_payload_shape(monkeypatch):

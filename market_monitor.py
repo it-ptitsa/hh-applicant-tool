@@ -1250,11 +1250,22 @@ def build_weekly(store: Store, now: datetime) -> list[str]:
         a, b = round(100 * w["stacks0"][key] / f0), round(100 * w["stacks1"][key] / f1)
         return f"{a}%" if a == b else f"{b}% ({b - a:+d} п.п.)"
 
-    rows = []
+    short = {"front": "Фронтенд", "fullstack": "Fullstack", "ai_js": "AI на JS"}
+    table_rows, refreshed = [], []
     for cat, label in DIRECTIONS:
-        fl = w["flows"][cat]
-        rows.append(f"{label} <b>{_minus(c1[cat] - c0[cat])}</b>: новых {fl['new']} · закрыто {fl['closed']}"
-                    f" · подняли {fl['bumped']} · переоткрыли {fl['reopened']}")
+        fl, total = w["flows"][cat], c1[cat] - c0[cat]
+        other = total - fl["new"] + fl["closed"]  # пропали/вернулись и ещё не закрыты, смена категории
+        table_rows.append(f"{short[cat]:10}{fl['new']:>5}{fl['closed']:>6}{_minus(other) if other else '0':>6}"
+                          f"{_minus(total) if total else '0':>7}")
+        if fl["bumped"] or fl["reopened"]:
+            refreshed.append(f"{label.lower()} — подняли {fl['bumped']}, переоткрыли {fl['reopened']}")
+    rows = [
+        "<pre>" + "\n".join([f"{'':10}{'нов':>5}{'закр':>6}{'проч':>6}{'итог':>7}", *table_rows]) + "</pre>",
+        "<i>нов — новые, закр — закрыты (истёк срок или нет 3 дня), проч — временно пропали или вернулись."
+        " Итог = нов − закр + проч.</i>",
+    ]
+    if refreshed:
+        rows.append("Освежили дату (в итоге не участвуют): " + "; ".join(refreshed))
     by_day = w["new_by_weekday"]
     lines = [
         f"📈 <b>JS-рынок на hh · неделя {first.astimezone(MSK).strftime('%d.%m')}–"
