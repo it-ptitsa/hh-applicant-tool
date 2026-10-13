@@ -6,11 +6,7 @@ chat_text_button + messageId вопроса (POST chatik.hh.ru/chatik/api/send).
 поэтому отправляем точный текст кнопки обычным сообщением: бот его принимает.
 """
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import chat_buttons as cb  # noqa: E402
+from hh_applicant_tool.operations import answer_buttons as cb
 
 ME = "100"
 
@@ -49,5 +45,25 @@ def test_parse_choice():
 def test_send_payload_is_exact_button_text_without_metadata():
     """12.10 вживую: с metadata (как в веб-чате) /chatik/api/send отвечает 500; точный текст кнопки
     обычным сообщением — 200, и бот засчитывает ответ (завершил скрининг и вышел из чата)."""
-    p = cb.send_payload(chat_id=5, message_id=2, text="да", key="k1")
+    p = cb.send_payload(chat_id=5, text="да", key="k1")
     assert p == {"chatId": 5, "idempotencyKey": "k1", "text": "да"}
+
+
+def test_query_lists_numbered_options_and_facts():
+    q = cb.pending_question(chat([msg(2, "Удобен офис?", buttons=["да", "нет"])]))
+    text = cb.build_query(q, "Опыт: React", "Офис: да")
+    assert "1. да\n2. нет" in text and "Опыт: React" in text and "Офис: да" in text
+
+
+def test_operation_is_registered_in_cli():
+    from hh_applicant_tool.main import HHApplicantTool
+    t = HHApplicantTool()
+    args = t._parser.parse_args(["answer-buttons", "--send", "--pages", "2"])
+    assert args.send is True and args.pages == 2
+
+
+def test_iter_chats_dedupes_and_stops_on_repeated_pages():
+    """13.10: веб-чат отдаёт одни и те же чаты на разных страницах — 12 «чатов» оказались 3."""
+    pages = [[{"id": 1}, {"id": 2}], [{"id": 2}, {"id": 1}], [{"id": 3}]]
+    got = list(cb.iter_unique_chats(lambda p: pages[p] if p < len(pages) else [], max_pages=5))
+    assert [c["id"] for c in got] == [1, 2]   # вторая страница — повтор первой → обход остановлен

@@ -110,6 +110,7 @@ which claude && claude --version
 | **Тест (ничего не шлёт)** | `apply-vacancies --dry-run …` |
 | **Рассылка** | `apply-vacancies -f …` (`--ai` для AI-письма, либо `-L letter.txt`) |
 | **Ответы в чатах** | `reply-employers --ai` |
+| **Ответы роботу-рекрутеру кнопками** | `answer-buttons` (показать) · `answer-buttons --send` (ответить); настройки — `candidate_prefs.txt` |
 | **Поднять резюме** | `update-resumes` |
 | **Статус аккаунта** | `whoami` |
 | **Проверка каптчи (ничего не шлёт)** | `check-captcha` |
