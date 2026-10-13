@@ -33,6 +33,7 @@ class Namespace(BaseNamespace):
     reply_message: str
     max_pages: int
     only_invitations: bool
+    only_new: bool
     dry_run: bool
     use_ai: bool
     system_prompt: str
@@ -76,6 +77,12 @@ class Operation(BaseOperation):
             action=argparse.BooleanOptionalAction,
         )
         parser.add_argument(
+            "--only-new",
+            help="Читать только чаты с новыми сообщениями (has_new_messages) — для частых запусков сторожем",
+            default=False,
+            action=argparse.BooleanOptionalAction,
+        )
+        parser.add_argument(
             "--dry-run",
             "--dry",
             help="Не отправлять сообщения, а только выводить параметры запроса",
@@ -112,6 +119,7 @@ class Operation(BaseOperation):
         self.max_pages = args.max_pages
         self.dry_run = args.dry_run
         self.only_invitations = args.only_invitations
+        self.only_new = args.only_new
 
         self.message_prompt = args.message_prompt
         self.cover_letter_ai = (
@@ -223,6 +231,10 @@ class Operation(BaseOperation):
                 if not (
                     resume := resume_map.get(negotiation["resume"].get("id"))
                 ):
+                    continue
+
+                # Частый запуск сторожем: переписку читаем только там, где есть новые сообщения
+                if getattr(self, "only_new", False) and not negotiation.get("has_new_messages"):
                     continue
 
                 updated_at = parse_api_datetime(negotiation["updated_at"])
