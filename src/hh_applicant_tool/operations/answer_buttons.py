@@ -79,6 +79,20 @@ def send_payload(chat_id: int, text: str, key: str | None = None) -> dict:
     return {"chatId": chat_id, "idempotencyKey": key or str(uuid.uuid4()), "text": text}
 
 
+def iter_unique_chats(fetch_page, max_pages: int):
+    """Чаты без повторов. Веб-чат на разных страницах отдаёт одни и те же чаты (13.10: 12 → 3), поэтому
+    дубли отбрасываем, а страницу без новых чатов считаем концом списка."""
+    seen = set()
+    for page in range(max_pages):
+        items = fetch_page(page)
+        fresh = [c for c in items if c["id"] not in seen]
+        if not fresh:
+            return
+        for c in fresh:
+            seen.add(c["id"])
+            yield c
+
+
 def build_query(q: dict, resume: str, prefs: str) -> str:
     opts = "\n".join(f"{i}. {o}" for i, o in enumerate(q["options"], 1))
     return (
@@ -132,12 +146,11 @@ class Operation(BaseOperation):
         ai = tool.get_cover_letter_ai(SYSTEM_PROMPT)
 
         sent = skipped = chosen = 0
-        for page in range(args.pages):
-            items = s.get(f"{CHATIK}/chatik/api/chats", params={"page": page, "perPage": 50},
-                          timeout=30).json()["chats"]["items"]
-            if not items:
-                break
-            for ch in items:
+        def fetch_page(page: int) -> list[dict]:
+            return s.get(f"{CHATIK}/chatik/api/chats", params={"page": page, "perPage": 50},
+                         timeout=30).json()["chats"]["items"]
+
+        for ch in iter_unique_chats(fetch_page, args.pages):
                 if ch.get("type") != "NEGOTIATION":
                     continue
                 data = s.get(f"{CHATIK}/chatik/api/chat_data", params={"chatId": ch["id"]}, timeout=30).json()

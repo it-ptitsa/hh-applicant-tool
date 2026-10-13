@@ -60,3 +60,10 @@ def test_operation_is_registered_in_cli():
     t = HHApplicantTool()
     args = t._parser.parse_args(["answer-buttons", "--send", "--pages", "2"])
     assert args.send is True and args.pages == 2
+
+
+def test_iter_chats_dedupes_and_stops_on_repeated_pages():
+    """13.10: веб-чат отдаёт одни и те же чаты на разных страницах — 12 «чатов» оказались 3."""
+    pages = [[{"id": 1}, {"id": 2}], [{"id": 2}, {"id": 1}], [{"id": 3}]]
+    got = list(cb.iter_unique_chats(lambda p: pages[p] if p < len(pages) else [], max_pages=5))
+    assert [c["id"] for c in got] == [1, 2]   # вторая страница — повтор первой → обход остановлен
