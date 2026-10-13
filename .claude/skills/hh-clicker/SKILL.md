@@ -110,6 +110,7 @@ which claude && claude --version
 | **Тест (ничего не шлёт)** | `apply-vacancies --dry-run …` |
 | **Рассылка** | `apply-vacancies -f …` (`--ai` для AI-письма, либо `-L letter.txt`) |
 | **Ответы в чатах** | `reply-employers --ai` |
+| **Оперативные ответы (сторож каждые 5 мин)** | `chat_watch.sh` по крону `*/5 6-17 * * *` (UTC); внутри `watch-chats` → `reply-employers --only-new` + `answer-buttons --send` |
 | **Ответы роботу-рекрутеру кнопками** | `answer-buttons` (показать) · `answer-buttons --send` (ответить); настройки — `candidate_prefs.txt` |
 | **Поднять резюме** | `update-resumes` |
 | **Статус аккаунта** | `whoami` |
