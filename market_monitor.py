@@ -640,7 +640,8 @@ def build_daily(r: Report) -> list[str]:
     if checks:
         lines += ["⚠️ <b>Не пересылать: проверка не пройдена</b>", *[f"• {html.escape(c)}" for c in checks], ""]
     lines += [
-        f"📊 <b>JS-рынок на hh · {day.strftime('%d.%m.%Y')}, {WEEKDAYS[day.weekday()]}</b>",
+        "📊 <b>ЕЖЕДНЕВНЫЙ ОТЧЁТ · JS-ВАКАНСИИ НА HH</b>",
+        f"<b>{day.strftime('%d.%m.%Y')}, {WEEKDAYS[day.weekday()]}</b>",
         "",
         f"<b>JS-рынок: {js_now}</b>" + (f" ({js_now - js_prev:+d} за сутки)" if js_prev is not None else ""),
         f"• Фронтенд: <b>{len(front)}</b>{_d(len(front), p('front'))} · уникальных позиций {unique_positions(front)}"
@@ -1048,19 +1049,24 @@ def refresh_anchors(api, store: Store, now: datetime, sleep) -> None:
     store.save_anchors(points)
 
 
-def send(text: str) -> None:
+def send(text: str, admin: bool = False) -> None:
+    """Отчёт — в тему группы MARKET_CHAT_ID/MARKET_THREAD_ID; сбои и непрошедшие проверки — админу в личку."""
     token = os.getenv("TELEGRAM_NOTIFY_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_NOTIFY_CHAT_ID")
+    admin_chat = os.getenv("TELEGRAM_NOTIFY_CHAT_ID")
+    chat_id = admin_chat if admin else (os.getenv("MARKET_CHAT_ID") or admin_chat)
     if not (token and chat_id):
         print(text, end="\n\n")
         return
-    r = requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
-        timeout=30,
-    )
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if not admin and os.getenv("MARKET_CHAT_ID") and os.getenv("MARKET_THREAD_ID"):
+        payload["message_thread_id"] = int(os.environ["MARKET_THREAD_ID"])
+    r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json=payload, timeout=30)
     if not r.ok:
         print("Telegram error:", getattr(r, "text", r), file=sys.stderr)
+
+
+def send_admin(text: str) -> None:
+    send(text, admin=True)
 
 
 def load_golden() -> set[str]:
@@ -1157,12 +1163,13 @@ def build_report(api, store: Store, now: datetime, sleep) -> tuple[Report, dict[
     return report, it_role_of
 
 
-def run(api, store: Store, now: datetime | None = None, send=send, sleep=time.sleep, dry_run=False) -> Report:
+def run(api, store: Store, now: datetime | None = None, send=send, sleep=time.sleep, dry_run=False,
+        alert=send_admin) -> Report:
     now = now or datetime.now(MSK)
     try:
         report, it_role_of = build_report(api, store, now, sleep)
     except Exception as ex:
-        send(
+        alert(
             "⚠️ <b>Мониторинг рынка: ошибка</b>\n"
             f"{html.escape(type(ex).__name__)}: {html.escape(str(ex))[:300]}\n"
             "Снимок не сохранён, окно не сдвинуто — следующий запуск досчитает."
@@ -1172,8 +1179,9 @@ def run(api, store: Store, now: datetime | None = None, send=send, sleep=time.sl
         store.save_run(report, it_role_of)
         store.record_titles(report.listing, load_golden(), now)
         store.review_recheck()
+    out = alert if quality_checks(report) else send  # непроверенный отчёт в группу учеников не уходит
     for message in build_daily(report):
-        send(message)
+        out(message)
     return report
 
 
@@ -1268,7 +1276,8 @@ def build_weekly(store: Store, now: datetime) -> list[str]:
         rows.append("Освежили дату (в итоге не участвуют): " + "; ".join(refreshed))
     by_day = w["new_by_weekday"]
     lines = [
-        f"📈 <b>JS-рынок на hh · неделя {first.astimezone(MSK).strftime('%d.%m')}–"
+        "📈 <b>НЕДЕЛЬНЫЙ ОТЧЁТ · JS-ВАКАНСИИ НА HH</b>",
+        f"<b>неделя {first.astimezone(MSK).strftime('%d.%m')}–"
         f"{(last - timedelta(days=1)).astimezone(MSK).strftime('%d.%m.%Y')}</b>",
         "",
         f"<b>JS-рынок: {js0} → {js1}</b> ({js1 - js0:+d}{pct})",
@@ -1329,6 +1338,7 @@ def main() -> None:
     parser.add_argument("--note-file", type=Path, help="отправить в бот текст из файла (UTF-8, HTML)")
     args = parser.parse_args()
     sender = (lambda text: print(text, end="\n\n")) if args.dry_run else send
+    alert = sender if args.dry_run else send_admin
     store = Store(args.db)
     if args.fetch_details:
         import vacancy_details
@@ -1347,15 +1357,15 @@ def main() -> None:
         print(json.dumps(store.review_stats(), ensure_ascii=False))
     elif args.disputes:
         print(json.dumps(store.disputes(), ensure_ascii=False, indent=1))
-    elif args.note:
-        sender(args.note)
+    elif args.note:  # заметки агента-сверщика — служебные, только админу
+        alert(args.note)
     elif args.note_file:
-        send(args.note_file.read_text(encoding="utf-8"))
+        send_admin(args.note_file.read_text(encoding="utf-8"))
         print("отправлено")  # агент 06.10 принял тишину за сбой и отправил дважды
     elif args.review_recheck:
         print(json.dumps({"changed": store.review_recheck(), **store.review_stats()}, ensure_ascii=False))
     else:
-        run(Api(load_token()), store, send=sender, dry_run=args.dry_run)
+        run(Api(load_token()), store, send=sender, dry_run=args.dry_run, alert=alert)
 
 
 if __name__ == "__main__":

@@ -538,10 +538,10 @@ class FakeApi:
         return {"items": src[page * per:(page + 1) * per], "found": len(src), "pages": max(1, -(-len(src) // per))}
 
 
-def _day(api_listing, now, store, sent, extra=None):
+def _day(api_listing, now, store, sent, extra=None, alert=None):
     api = FakeApi(api_listing, extra)
     api.now = now
-    mm.run(api, store, now=now, send=sent.append, sleep=lambda s: None)
+    mm.run(api, store, now=now, send=sent.append, alert=alert or sent.append, sleep=lambda s: None)
     return api
 
 
@@ -614,6 +614,7 @@ def test_weekly_report_from_history(tmp_path):
         _day(list(base), now, store, sent)
     msgs = mm.build_weekly(store, datetime(2026, 10, 6, 8, 5, tzinfo=MSK))
     text = msgs[0]
+    assert text.startswith("📈 <b>НЕДЕЛЬНЫЙ ОТЧЁТ · JS-ВАКАНСИИ НА HH</b>")
     assert "неделя 29.09–05.10" in text
     assert "Фронтенд: 4 → <b>11</b> (+7)" in text
     assert "Новые во фронте по дням" in text
@@ -644,6 +645,52 @@ def test_send_telegram_payload_shape(monkeypatch):
     assert captured["json"]["parse_mode"] == "HTML"
 
 
+def _capture_post(monkeypatch):
+    captured = []
+
+    class Resp:
+        ok = True
+
+    monkeypatch.setattr(mm.requests, "post", lambda url, json, timeout: captured.append(json) or Resp())
+    monkeypatch.setenv("TELEGRAM_NOTIFY_BOT_TOKEN", "t0k")
+    monkeypatch.setenv("TELEGRAM_NOTIFY_CHAT_ID", "42")
+    monkeypatch.setenv("MARKET_CHAT_ID", "-1003781373837")
+    monkeypatch.setenv("MARKET_THREAD_ID", "4959")
+    return captured
+
+
+def test_send_report_goes_to_market_topic(monkeypatch):
+    captured = _capture_post(monkeypatch)
+    mm.send("отчёт")
+    assert captured[0]["chat_id"] == "-1003781373837"
+    assert captured[0]["message_thread_id"] == 4959
+
+
+def test_send_admin_goes_to_private_chat(monkeypatch):
+    captured = _capture_post(monkeypatch)
+    mm.send_admin("сбой")
+    assert captured[0]["chat_id"] == "42"
+    assert "message_thread_id" not in captured[0]
+
+
+def test_daily_header_is_caps(tmp_path):
+    store = mm.Store(tmp_path / "market.db")
+    sent = []
+    now = datetime(2026, 10, 14, 8, 0, tzinfo=MSK)
+    _day([_it("2026-10-13T20:00:00+0300", name="Frontend Developer (React)", employer="Nitka")], now, store, sent)
+    assert sent[0].startswith("📊 <b>ЕЖЕДНЕВНЫЙ ОТЧЁТ · JS-ВАКАНСИИ НА HH</b>\n<b>14.10.2026, ср</b>")
+
+
+def test_failed_checks_go_to_admin_only(tmp_path, monkeypatch):
+    store = mm.Store(tmp_path / "market.db")
+    sent, alerts = [], []
+    monkeypatch.setattr(mm, "quality_checks", lambda r: ["суммы не сходятся"])
+    now = datetime(2026, 10, 14, 8, 0, tzinfo=MSK)
+    _day([_it("2026-10-13T20:00:00+0300", name="Frontend Developer (React)", employer="Nitka")], now, store, sent,
+         alert=alerts.append)
+    assert sent == [] and alerts and "Не пересылать" in alerts[0]
+
+
 def test_run_api_failure_keeps_window_and_reports(tmp_path):
     store = mm.Store(tmp_path / "market.db")
     sent = []
@@ -652,10 +699,12 @@ def test_run_api_failure_keeps_window_and_reports(tmp_path):
         def get(self, path, **params):
             raise requests.ConnectionError("hh недоступен")
 
+    alerts = []
     with pytest.raises(requests.ConnectionError):
-        mm.run(Broken(), store, now=NOW, send=sent.append, sleep=lambda s: None)
+        mm.run(Broken(), store, now=NOW, send=sent.append, alert=alerts.append, sleep=lambda s: None)
     assert store.last_run() is None
-    assert len(sent) == 1 and "ошибк" in sent[0].lower()
+    assert sent == []  # ошибка — только админу, не в группу учеников
+    assert len(alerts) == 1 and "ошибк" in alerts[0].lower()
 
 
 def test_store_opens_production_v2_schema(tmp_path):
@@ -868,9 +917,9 @@ def test_review_queue_for_agent_hides_auto_answer(tmp_path, capsys, monkeypatch)
     assert "Странный Front Инженер" in out and "auto" not in out and "front" not in out.replace("Front", "")
 
 
-def test_note_file_is_sent(tmp_path, monkeypatch):
+def test_note_file_is_sent_to_admin(tmp_path, monkeypatch):
     sent = []
-    monkeypatch.setattr(mm, "send", sent.append)
+    monkeypatch.setattr(mm, "send_admin", sent.append)  # служебное от агента — не в группу учеников
     note = tmp_path / "note.txt"
     note.write_text("💡 <b>Вывод недели</b>: рынок стабилен", encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["mm", "--db", str(tmp_path / "m.db"), "--note-file", str(note)])
