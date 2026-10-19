@@ -178,3 +178,43 @@ class ClaudeCliCaptcha:
         if top < min_votes:
             return None
         return Counter(r for r in readings if r.replace("ё", "е") == best).most_common(1)[0][0]
+
+
+@dataclass
+class ClaudeCliChat:
+    """Текстовые ответы через Claude Code CLI по подписке: письма, ответы
+    на вопросы тестов. Интерфейс как у ChatOpenAI.complete(message).
+
+    Свой системный промпт вместо промпта Claude Code (--system-prompt) и
+    без инструментов (--tools ""): модель только пишет текст.
+    """
+
+    system_prompt: str = ""
+    model: str = DEFAULT_CLAUDE_MODEL
+    claude_bin: str = "claude"
+    timeout: float = DEFAULT_CLAUDE_TIMEOUT
+
+    def complete(self, message: str) -> str:
+        cmd = [
+            self.claude_bin, "-p", "--model", self.model,
+            "--system-prompt", self.system_prompt or "Отвечай по делу.",
+            # --tools последним: флаг принимает несколько значений
+            "--tools", "",
+        ]
+        try:
+            with tempfile.TemporaryDirectory(prefix="hh-letter-") as d:
+                proc = subprocess.run(
+                    cmd, input=message, capture_output=True, text=True,
+                    timeout=self.timeout, cwd=d,
+                )
+        except FileNotFoundError as ex:
+            raise ClaudeCliError(
+                f"не найден {self.claude_bin}: установите Claude Code и войдите в подписку"
+            ) from ex
+        except subprocess.TimeoutExpired as ex:
+            raise ClaudeCliError(f"claude не ответил за {self.timeout:.0f} с") from ex
+        if proc.returncode != 0:
+            raise ClaudeCliError(
+                f"claude завершился с кодом {proc.returncode}: {(proc.stderr or proc.stdout)[-200:]}"
+            )
+        return proc.stdout.strip()
