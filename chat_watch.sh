@@ -9,7 +9,9 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 HH=${HH_CMD:-"docker compose run --rm -T -u docker hh_applicant_tool python -m hh_applicant_tool"}
-exec 9>/tmp/hh_chat_watch.lock
+# Второй аккаунт: HH_PROFILE=acc5 ACCOUNT_LABEL=Синицын bash chat_watch.sh — свой профиль и свой замок
+[ -n "${HH_PROFILE:-}" ] && HH="$HH --profile-id $HH_PROFILE"
+exec 9>/tmp/hh_chat_watch${HH_PROFILE:+_$HH_PROFILE}.lock
 flock -n 9 || exit 0   # прошлый запуск ещё отвечает
 
 $HH watch-chats >/dev/null 2>&1 || exit 0
@@ -24,7 +26,7 @@ set -a; . ./digest.env; set +a
 [ -n "${TELEGRAM_NOTIFY_BOT_TOKEN:-}" ] || exit 0
 lines=$(printf "%s\n%s\n" "$replies" "$buttons" | grep -E "^(📨|✅|⏸|📋|   ⚠️)" | head -30)
 [ -z "$lines" ] && exit 0
-msg=$(printf "💬 Ответы в чатах hh\n\n%s" "$lines")
+msg=$(printf "💬 Ответы в чатах hh%s\n\n%s" "${ACCOUNT_LABEL:+ · $ACCOUNT_LABEL}" "$lines")
 python3 -c 'import json,sys; print(json.dumps({"chat_id": sys.argv[1], "text": sys.argv[2], "disable_web_page_preview": True}))' \
   "$TELEGRAM_NOTIFY_CHAT_ID" "$msg" \
   | curl -s -o /dev/null -X POST -H "Content-Type: application/json" -d @- \

@@ -238,13 +238,18 @@ def collect(api: Api, hours: int) -> list[dict]:
     return interesting
 
 
+# Подпись аккаунта, когда кликер ведёт несколько аккаунтов (chat_digest.sh <часы> <профиль> <подпись>)
+ACCOUNT_LABEL = os.getenv("ACCOUNT_LABEL", "").strip()
+_TAG = f" · {ACCOUNT_LABEL}" if ACCOUNT_LABEL else ""
+
+
 def build_message(items: list[dict], hours: int) -> str:
     if not items:
-        return f"🤖 hh-чаты за {hours}ч: ничего требующего внимания."
+        return f"🤖 hh-чаты{_TAG} за {hours}ч: ничего требующего внимания."
 
     need_answer = [i for i in items if not i["answered"]]
     head = [
-        f"🤖 <b>hh-чаты за {hours}ч</b>",
+        f"🤖 <b>hh-чаты{_TAG} за {hours}ч</b>",
         f"Требуют внимания: <b>{len(items)}</b> · без твоего ответа: <b>{len(need_answer)}</b>",
         "",
     ]
