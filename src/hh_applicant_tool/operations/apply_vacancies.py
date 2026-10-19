@@ -30,6 +30,7 @@ from .. import utils
 from ..ai.base import AIError
 from ..api import BadResponse, Redirect, datatypes
 from ..api.datatypes import PaginatedItems, SearchVacancy
+from ..ai.letter import AI_MATCH_PLACEHOLDER, compose_letter
 from ..api.captcha import CaptchaError, CaptchaFlow
 from ..api.errors import ApiError, CaptchaRequired, LimitExceeded
 from ..ai.openai import CAPTCHA_SCRIPT_ANY, CAPTCHA_SCRIPT_BY_LANGUAGE
@@ -669,6 +670,54 @@ class Operation(BaseOperation):
                     parts.append(f"Ключевые навыки: {key_skills}")
 
         return "\n".join(parts)
+
+    def _resume_facts(self, resume: dict) -> str:
+        """Факты кандидата для абзаца письма: «О себе», навыки и опыт из
+        резюме на hh. Кэш на прогон — резюме одно на весь прогон."""
+        cache = self.__dict__.setdefault("_resume_facts_cache", {})
+        rid = resume.get("id")
+        if rid in cache:
+            return cache[rid]
+        facts = ""
+        try:
+            full = self.api_client.get(f"/resumes/{rid}")
+            parts = []
+            if isinstance(full, dict):
+                if full.get("skills"):
+                    parts.append("О себе: " + full["skills"])
+                if full.get("skill_set"):
+                    parts.append("Навыки: " + ", ".join(full["skill_set"]))
+                for e in full.get("experience") or []:
+                    parts.append(
+                        f"{e.get('company')} ({e.get('position')}):\n{e.get('description') or ''}"
+                    )
+            facts = "\n\n".join(parts)
+        except Exception as ex:
+            logger.warning("Не удалось получить резюме для письма: %s", ex)
+        cache[rid] = facts
+        return facts
+
+    def _build_match_message(self, vacancy: dict, resume: dict) -> str:
+        """Сообщение модели для абзаца «что увидел у вас и где пересекаемся»."""
+        full_vacancy = None
+        if vacancy.get("id"):
+            try:
+                full_vacancy = self.api_client.get(f"/vacancies/{vacancy['id']}")
+            except Exception as e:
+                logger.warning("Не удалось получить вакансию %s: %s", vacancy.get("id"), e)
+        if not isinstance(full_vacancy, dict):
+            full_vacancy = None
+        return "\n".join(
+            [
+                self.message_prompt,
+                "",
+                "=== РЕЗЮМЕ КАНДИДАТА (только эти факты) ===",
+                self._resume_facts(resume),
+                "",
+                "=== ВАКАНСИЯ ===",
+                self._build_vacancy_context(vacancy, full_vacancy=full_vacancy, include_full=True),
+            ]
+        )
 
     def _build_cover_letter_message(self, vacancy: dict, resume: dict) -> str:
         """Собирает сообщение для AI-адаптации сопроводительного письма.
@@ -1752,7 +1801,17 @@ class Operation(BaseOperation):
                 if self.force_message or vacancy.get(
                     "response_letter_required"
                 ):
-                    if self.cover_letter_ai:
+                    if self.cover_letter_ai and AI_MATCH_PLACEHOLDER in self.cover_letter:
+                        # Шаблон письма: модель пишет только абзац про вакансию
+                        msg = self._build_match_message(vacancy, resume)
+                        logger.debug("prompt: %s", msg)
+                        letter = compose_letter(
+                            self.cover_letter,
+                            message_placeholders,
+                            self.cover_letter_ai,
+                            msg,
+                        )
+                    elif self.cover_letter_ai:
                         msg = self._build_cover_letter_message(
                             vacancy, resume
                         )

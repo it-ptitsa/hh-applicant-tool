@@ -428,7 +428,26 @@ class HHApplicantTool(MegaTool):
                 f"Сессионные куки имеют неправильный тип: {type(self.session.cookies)}"
             )
 
-    def get_cover_letter_ai(self, system_prompt: str) -> ai.ChatOpenAI:
+    def get_cover_letter_ai(self, system_prompt: str):
+        """ChatOpenAI или, при openai_cover_letter.provider = claude-cli,
+        ClaudeCliChat (письма через подписку Claude Code)."""
+        c = {
+            **(self.config.get("openai") or {}),
+            **(self.config.get("openai_cover_letter") or {}),
+        }
+        if c.get("provider") == "claude-cli":
+            from .ai.claude_cli import (
+                DEFAULT_CLAUDE_MODEL,
+                DEFAULT_CLAUDE_TIMEOUT,
+                ClaudeCliChat,
+            )
+
+            return ClaudeCliChat(
+                system_prompt=system_prompt,
+                model=c.get("claude_model") or DEFAULT_CLAUDE_MODEL,
+                claude_bin=c.get("claude_bin") or "claude",
+                timeout=float(c.get("claude_timeout") or DEFAULT_CLAUDE_TIMEOUT),
+            )
         return self.get_ai_client(system_prompt, purpose="cover_letter")
 
     def get_vacancy_filter_ai(self, system_prompt: str) -> ai.ChatOpenAI:
