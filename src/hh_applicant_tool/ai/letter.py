@@ -22,7 +22,7 @@ logger = logging.getLogger(__package__)
 
 AI_MATCH_PLACEHOLDER = "%(ai_match)s"
 MAX_ATTEMPTS = 2
-MIN_LEN, MAX_LEN = 60, 450
+MIN_LEN, MAX_LEN = 60, 400
 
 # Штампы, по которым письмо читается как нейросетевое (анти-AI раздел скилла resume)
 STOP_PHRASES = (
