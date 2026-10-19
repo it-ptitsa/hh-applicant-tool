@@ -42,7 +42,8 @@ def clean_letter_text(text: str) -> str:
     """Только короткие тире, без ёлочек, кавычек-обёрток и markdown."""
     text = (text or "").replace("—", "–").replace("―", "–")
     text = re.sub(r"[«»“”„]", "", text)
-    text = re.sub(r"[*_`#]+", "", text)
+    # Разметку снимаем, но одиночное «_» оставляем: оно бывает в никах (@flybird_dev)
+    text = re.sub(r"[*`]+|__|^#+\s*", "", text, flags=re.M)
     text = re.sub(r"[ \t]+", " ", text)
     text = "\n".join(line.strip() for line in text.strip().splitlines())
     return text.strip().strip('"').strip("'").strip()

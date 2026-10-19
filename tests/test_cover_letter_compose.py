@@ -114,3 +114,10 @@ def test_percent_in_template_text_is_literal():
     letter = compose_letter(tpl, {}, FakeAI([GOOD]), "в")
     assert letter.endswith("Поднял онбординг с 61% до 74%, 100% уверенно.")
     assert compose_letter(tpl, {}, FakeAI(["плохо", "плохо"]), "в").endswith("с 61% до 74%, 100% уверенно.")
+
+
+def test_underscore_in_nickname_survives():
+    tpl = "Здравствуйте!\n\n%(ai_match)s\n\nО себе.\n\nTelegram: @flybird_dev"
+    letter = compose_letter(tpl, {}, FakeAI([GOOD]), "в")
+    assert letter.endswith("Telegram: @flybird_dev")
+    assert clean_letter_text("**жирный** и `код` и __подчёркнутый__ @a_b_c") == "жирный и код и подчёркнутый @a_b_c"
