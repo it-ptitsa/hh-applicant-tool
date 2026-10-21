@@ -9,6 +9,14 @@
 set -uo pipefail
 cd "$(dirname "$0")"
 HH=${HH_CMD:-"docker compose run --rm -T -u docker hh_applicant_tool python -m hh_applicant_tool"}
+# Ответы через подписку Claude (provider claude-cli): если на хосте есть claude и токен
+# от `claude setup-token`, отдаём их контейнеру. Токен — через окружение, не в аргументах (видны в ps).
+CLAUDE_BIN=${CLAUDE_BIN:-/usr/bin/claude}
+CLAUDE_TOKEN_FILE=${CLAUDE_TOKEN_FILE:-/root/.claude_oauth_token}
+if [ -z "${HH_CMD:-}" ] && [ -x "$CLAUDE_BIN" ] && [ -r "$CLAUDE_TOKEN_FILE" ]; then
+  export CLAUDE_CODE_OAUTH_TOKEN=$(cat "$CLAUDE_TOKEN_FILE")
+  HH="docker compose run --rm -T -u docker -v $CLAUDE_BIN:/usr/local/bin/claude:ro -e CLAUDE_CODE_OAUTH_TOKEN -e HOME=/tmp hh_applicant_tool python -m hh_applicant_tool"
+fi
 # Второй аккаунт: HH_PROFILE=acc5 ACCOUNT_LABEL=Синицын bash chat_watch.sh — свой профиль и свой замок
 [ -n "${HH_PROFILE:-}" ] && HH="$HH --profile-id $HH_PROFILE"
 exec 9>/tmp/hh_chat_watch${HH_PROFILE:+_$HH_PROFILE}.lock
