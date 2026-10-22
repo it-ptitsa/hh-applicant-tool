@@ -92,6 +92,7 @@ Untitled
 # Сервер: данные аккаунта, секреты, логи, бэкапы — не в git
 apply.env
 digest.env
+.chat_notify_seen*.json
 *.log
 *.bak
 *.acc3bak

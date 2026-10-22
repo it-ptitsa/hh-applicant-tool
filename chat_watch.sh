@@ -29,13 +29,11 @@ buttons=$($HH answer-buttons --send 2>&1 | grep -vE "^time=|Container")
 echo "$replies"; echo "$buttons"
 $HH watch-chats --commit >/dev/null 2>&1
 
-[ -f digest.env ] || exit 0
-set -a; . ./digest.env; set +a
+DIGEST_ENV=${DIGEST_ENV:-digest.env}
+[ -f "$DIGEST_ENV" ] || exit 0
+set -a; . "$DIGEST_ENV"; set +a
 [ -n "${TELEGRAM_NOTIFY_BOT_TOKEN:-}" ] || exit 0
-lines=$(printf "%s\n%s\n" "$replies" "$buttons" | grep -E "^(📨|✅|⏸|📋|   ⚠️)" | head -30)
-[ -z "$lines" ] && exit 0
-msg=$(printf "💬 Ответы в чатах hh%s\n\n%s" "${ACCOUNT_LABEL:+ · $ACCOUNT_LABEL}" "$lines")
-python3 -c 'import json,sys; print(json.dumps({"chat_id": sys.argv[1], "text": sys.argv[2], "disable_web_page_preview": True}))' \
-  "$TELEGRAM_NOTIFY_CHAT_ID" "$msg" \
-  | curl -s -o /dev/null -X POST -H "Content-Type: application/json" -d @- \
-    "https://api.telegram.org/bot${TELEGRAM_NOTIFY_BOT_TOKEN}/sendMessage"
+# Несколько резюме на аккаунте = по чату на резюме, и одно событие вакансии приходит N раз.
+# chat_notify.py склеивает строки по вакансии и не повторяет то, о чём уже писал за сутки.
+printf "%s\n%s\n" "$replies" "$buttons" | python3 chat_notify.py --label "${ACCOUNT_LABEL:-}" \
+  --state "${CHAT_NOTIFY_STATE:-.chat_notify_seen${HH_PROFILE:+_$HH_PROFILE}.json}"

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -159,7 +160,14 @@ def collect(api: Api, hours: int) -> list[dict]:
             if (item.get("state") or {}).get("id") == "discard":
                 continue
 
-            messages = api.get(f"/negotiations/{item['id']}/messages").get("items", [])
+            try:
+                messages = api.get(f"/negotiations/{item['id']}/messages").get("items", [])
+            except requests.HTTPError as e:
+                # Переписка одного отклика закрыта (403) — пропускаем его, а не роняем всю сводку
+                if getattr(e.response, "status_code", None) != 403:
+                    raise
+                print(f"Пропуск отклика {item['id']}: нет доступа к переписке (403)", file=sys.stderr)
+                continue
             fresh = [
                 m
                 for m in messages
@@ -224,6 +232,7 @@ def collect(api: Api, hours: int) -> list[dict]:
                     ),
                     "text": (last.get("text") or "").strip(),
                     "at": datetime.fromisoformat(last["created_at"]).strftime("%d.%m %H:%M"),
+                    "ts": last["created_at"],
                     "answered": answered,
                     "state": (item.get("state") or {}).get("name") or "",
                 }
@@ -243,29 +252,65 @@ ACCOUNT_LABEL = os.getenv("ACCOUNT_LABEL", "").strip()
 _TAG = f" · {ACCOUNT_LABEL}" if ACCOUNT_LABEL else ""
 
 
+PRIORITY = {"offer": 0, "contact": 1, "interview": 2, "test_task": 3, "question": 4}
+MAX_SNIPPETS = 2
+
+
+def group_by_vacancy(items: list[dict]) -> list[list[dict]]:
+    """Чаты одной вакансии вместе: на аккаунте несколько резюме, и у каждого свой чат с работодателем
+    (22.10.2026 «Фоксфорд — React Native» стоял в сводке 7 раз). Внутри группы — свежие первыми,
+    группы — по самой важной категории среди своих чатов."""
+    groups: dict[str, list[dict]] = {}
+    for i in items:
+        groups.setdefault(i["url"] or i["chat_url"], []).append(i)
+    out = [sorted(g, key=lambda i: i.get("ts") or "", reverse=True) for g in groups.values()]
+    out.sort(key=lambda g: min(PRIORITY.get(i["code"], 9) for i in g))
+    return out
+
+
+def _render_group(g: list[dict]) -> str:
+    unanswered = [i for i in g if not i["answered"]]
+    main = (unanswered or g)[0]
+    count = f" · {len(g)} резюме" if len(g) > 1 else ""
+    flag = " 🔴" if unanswered else ""
+    lines = [f"• <a href=\"{main['chat_url']}\">{html.escape(main['employer'])}</a> — "
+             f"{html.escape(main['vacancy'])}{count}{flag}"]
+    shown: set[str] = set()
+    for i in g:
+        snippet = re.sub(r"\s+", " ", i["text"])[:180]
+        if snippet in shown:
+            continue
+        shown.add(snippet)
+        lines.append(f"  <i>{i['at']}:</i> {html.escape(snippet)}")
+        if len(shown) == MAX_SNIPPETS:
+            break
+    if len(g) > 1 and unanswered:
+        links = " · ".join(f"<a href=\"{i['chat_url']}\">{n}</a>" for n, i in enumerate(unanswered, 1))
+        lines.append(f"  без ответа {len(unanswered)} из {len(g)}: {links}")
+    return "\n".join(lines)
+
+
 def build_message(items: list[dict], hours: int) -> str:
     if not items:
         return f"🤖 hh-чаты{_TAG} за {hours}ч: ничего требующего внимания."
 
-    need_answer = [i for i in items if not i["answered"]]
+    groups = group_by_vacancy(items)
+    need_answer = sum(1 for g in groups if any(not i["answered"] for i in g))
+    chats = f" · чатов: {len(items)}" if len(items) > len(groups) else ""
     head = [
         f"🤖 <b>hh-чаты{_TAG} за {hours}ч</b>",
-        f"Требуют внимания: <b>{len(items)}</b> · без твоего ответа: <b>{len(need_answer)}</b>",
+        f"Требуют внимания: <b>{len(groups)}</b> · без твоего ответа: <b>{need_answer}</b>{chats}",
         "",
     ]
 
     lines: list[str] = []
     current = None
-    for i in items:
-        if i["title"] != current:
-            current = i["title"]
+    for g in groups:
+        top = min(g, key=lambda i: PRIORITY.get(i["code"], 9))
+        if top["title"] != current:
+            current = top["title"]
             lines.append(f"\n<b>{current}</b>")
-        flag = "" if i["answered"] else " 🔴"
-        snippet = re.sub(r"\s+", " ", i["text"])[:180]
-        lines.append(
-            f"• <a href=\"{i['chat_url']}\">{i['employer']}</a> — {i['vacancy']}{flag}\n"
-            f"  <i>{i['at']}:</i> {snippet}"
-        )
+        lines.append(_render_group(g))
     return "\n".join(head + lines)
 
 
