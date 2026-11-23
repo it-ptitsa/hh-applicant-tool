@@ -402,3 +402,14 @@ class TestGetChatsAwaitingReply:
         chats = op.get_chats_awaiting_reply(1)
 
         assert [c.chat_id for c in chats] == [2]
+def test_chat_history_formats_upstream_creation_time():
+    operation = Operation.__new__(Operation)
+    history = operation.format_messages([
+        {
+            "participantDisplay": {"name": "Работодатель"},
+            "text": "Здравствуйте",
+            "creationTime": "2026-11-23T12:00:00+00:00",
+        }
+    ])
+    assert "2026-11-23" in history
+    assert "Работодатель: Здравствуйте" in history

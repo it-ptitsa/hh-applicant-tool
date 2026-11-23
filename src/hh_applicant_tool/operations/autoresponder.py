@@ -656,7 +656,8 @@ class Operation(BaseOperation):
                 continue
 
             created_at = self.parse_datetime(
-                message.get("createdAt")
+                message.get("creationTime")
+                or message.get("createdAt")
                 or message.get("created_at")
                 or message.get("created"),
             )
