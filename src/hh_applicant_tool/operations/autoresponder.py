@@ -391,7 +391,8 @@ class Operation(BaseOperation):
             return None
 
         created_at = self.parse_datetime(
-            last_message.get("createdAt")
+            last_message.get("creationTime")
+            or last_message.get("createdAt")
             or last_message.get("created_at")
             or last_message.get("created"),
         )
@@ -402,7 +403,22 @@ class Operation(BaseOperation):
         if datetime.now(timezone.utc) - created_at > timedelta(hours=72):
             return None
 
+        current_participant = item.get("currentParticipantId")
+        last_participant = last_message.get("participantId")
+        if (
+            current_participant is not None
+            and last_participant is not None
+            and str(current_participant) == str(last_participant)
+        ):
+            return None
+
         participant = last_message.get("participantDisplay") or {}
+        workflow_transition = last_message.get("workflowTransition") or {}
+        is_discard = workflow_transition.get("applicantState") == "DISCARD"
+        if not is_discard and not participant.get("isBot") and (
+            datetime.now(timezone.utc) - created_at < timedelta(minutes=15)
+        ):
+            return None
 
         contact_name = (
             participant.get("name")
@@ -413,10 +429,6 @@ class Operation(BaseOperation):
         reply_to_message = (
             last_message.get("text") or last_message.get("message") or ""
         ).strip()
-
-        workflow_transition = last_message.get("workflowTransition") or {}
-
-        is_discard = workflow_transition.get("applicantState") == "DISCARD"
 
         item_resources = item.get("resources") or {}
         # Объекты вакансии и резюме hh отдаёт двумя способами: либо

@@ -12,8 +12,14 @@ vacancy/resume — NameError на первом же чате. Тесты лов�
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import requests
 
 from hh_applicant_tool.operations.autoresponder import Operation
 
@@ -21,7 +27,7 @@ from hh_applicant_tool.operations.autoresponder import Operation
 def _message(text: str = "Здравствуйте!") -> dict:
     return {
         "id": 9,
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "createdAt": (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat(),
         "text": text,
         "participantDisplay": {"name": "Иван Иванов", "isBot": False},
         "actions": {"text_buttons": [{"text": "Да, интересно"}]},
@@ -155,6 +161,65 @@ class TestResources:
 
 
 class TestLastMessage:
+    def test_upstream_creation_time_field_is_accepted(self):
+        op = Operation()
+        message = _message()
+        message["creationTime"] = message.pop("createdAt")
+        item = {
+            "id": 1,
+            "lastMessage": message,
+            "resources": {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}},
+        }
+        assert _parse(op, item) is not None
+
+    def test_recent_human_message_waits_for_manual_reply(self):
+        op = Operation()
+        message = _message()
+        message["createdAt"] = datetime.now(timezone.utc).isoformat()
+        item = {
+            "id": 1,
+            "lastMessage": message,
+            "resources": {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}},
+        }
+        assert _parse(op, item) is None
+
+    def test_recent_bot_message_can_be_answered_immediately(self):
+        op = Operation()
+        message = _message()
+        message["createdAt"] = datetime.now(timezone.utc).isoformat()
+        message["participantDisplay"]["isBot"] = True
+        item = {
+            "id": 1,
+            "lastMessage": message,
+            "resources": {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}},
+        }
+        assert _parse(op, item) is not None
+
+    def test_recent_discard_remains_visible_for_cleanup(self):
+        op = Operation()
+        message = _message()
+        message["createdAt"] = datetime.now(timezone.utc).isoformat()
+        message["workflowTransition"] = {"applicantState": "DISCARD"}
+        item = {
+            "id": 1,
+            "lastMessage": message,
+            "resources": {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}},
+        }
+        chat = _parse(op, item)
+        assert chat is not None and chat.is_discard
+
+    def test_own_last_message_does_not_trigger_another_reply(self):
+        op = Operation()
+        message = _message()
+        message["participantId"] = "my-id"
+        item = {
+            "id": 1,
+            "currentParticipantId": "my-id",
+            "lastMessage": message,
+            "resources": {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}},
+        }
+        assert _parse(op, item) is None
+
     def test_last_message_field_is_used(self):
         """Список чатов кладёт последнее сообщение в lastMessage."""
         op = Operation()
@@ -193,6 +258,58 @@ class TestLastMessage:
 
 
 class TestGetChatsAwaitingReply:
+    def test_chat_api_human_cooldown_and_bot_exception(self):
+        human = _message("Когда удобно?")
+        human.pop("createdAt")
+        human["creationTime"] = datetime.now(timezone.utc).isoformat()
+        bot = _message("Выберите вариант")
+        bot.pop("createdAt")
+        bot["creationTime"] = datetime.now(timezone.utc).isoformat()
+        bot["participantDisplay"]["isBot"] = True
+        resources = {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}}
+        payload = {
+            "chats": {
+                "items": [
+                    {"id": 1, "lastMessage": human, "resources": resources},
+                    {"id": 2, "lastMessage": bot, "resources": resources},
+                ],
+                "pages": 1,
+            }
+        }
+        requests_seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests_seen.append(self.path)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(payload).encode())
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            op = Operation()
+            op.chat_url = f"http://127.0.0.1:{server.server_port}"
+            op.tool = SimpleNamespace(
+                session=requests.Session(),
+                xsrf_token="test-token",
+                get_resumes=lambda: [
+                    {"id": 777, "status": {"id": "published"}, "title": "Python"}
+                ],
+            )
+            chats = op.get_chats_awaiting_reply(max_pages=1)
+            assert [chat.chat_id for chat in chats] == [2]
+            assert requests_seen[0].startswith("/chatik/api/chats?")
+        finally:
+            server.shutdown()
+            thread.join(timeout=3)
+            server.server_close()
+
     def test_skipped_chats_do_not_break_the_loop(self):
         """parse_chat_item возвращает None — цикл это переживает.
 
