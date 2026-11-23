@@ -258,6 +258,55 @@ class TestLastMessage:
 
 
 class TestGetChatsAwaitingReply:
+    def test_keeps_chats_for_each_published_resume(self):
+        op = Operation()
+        published = [
+            {"id": 777, "status": {"id": "published"}, "title": "Frontend"},
+            {"id": 888, "status": {"id": "published"}, "title": "Frontend"},
+        ]
+        data = {
+            "chats": {
+                "items": [
+                    {"id": 1, "lastMessage": _message(), "resources": {"VACANCY": ["555"], "RESUME": ["777"]}},
+                    {"id": 2, "lastMessage": _message(), "resources": {"VACANCY": ["555"], "RESUME": ["888"]}},
+                ],
+                "pages": 1,
+            },
+            "resources": {
+                "vacancies": {"555": _vacancy()},
+                "resumes": {"777": _resume(), "888": _resume(888)},
+            },
+        }
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(data).encode())
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            op.chat_url = f"http://127.0.0.1:{server.server_port}"
+            op.tool = SimpleNamespace(
+                session=requests.Session(),
+                xsrf_token="test-token",
+                get_resumes=lambda: published,
+            )
+            chats = op.get_chats_awaiting_reply(max_pages=1)
+            assert [(chat.chat_id, chat.resume_id) for chat in chats] == [
+                (1, 777),
+                (2, 888),
+            ]
+        finally:
+            server.shutdown()
+            thread.join(timeout=3)
+            server.server_close()
+
     def test_chat_api_human_cooldown_and_bot_exception(self):
         human = _message("Когда удобно?")
         human.pop("createdAt")

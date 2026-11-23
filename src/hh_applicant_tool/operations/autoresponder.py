@@ -247,6 +247,7 @@ class Operation(BaseOperation):
             logger.warning("Не найдено ни одного резюме")
             return []
 
+        result: list[ChatToReply] = []
         for resume_id, resume in resumes.items():
             resume_hash = resume.get("hash", "")
             resume_title = resume.get("title", "")
@@ -260,8 +261,6 @@ class Operation(BaseOperation):
             skills = self.format_skills(
                 resume.get("skills"),
             )
-
-            result: list[ChatToReply] = []
 
             for page in range(max_pages):
                 data = self.get_chats(page)
@@ -431,6 +430,12 @@ class Operation(BaseOperation):
         ).strip()
 
         item_resources = item.get("resources") or {}
+        resume_refs = item_resources.get("RESUME")
+        if resume_refs:
+            refs = resume_refs if isinstance(resume_refs, list) else [resume_refs]
+            if str(resume_id) not in {str(ref) for ref in refs}:
+                return None
+
         # Объекты вакансии и резюме hh отдаёт двумя способами: либо
         # картой прямо в resources элемента чата, либо списком id
         # вида {"VACANCY": ["123"]}, а сами объекты кладутся в
