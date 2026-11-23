@@ -209,6 +209,7 @@ class HHApplicantTool(MegaTool):
         proxies: dict[str, str],
         *,
         log_label: str,
+        user_agent: str = DESKTOP_USER_AGENT,
     ) -> requests.Session:
         session = requests.Session()
 
@@ -216,7 +217,7 @@ class HHApplicantTool(MegaTool):
             logger.info("Use proxies for %s: %r", log_label, proxies)
             session.proxies = proxies
 
-        session.headers.update({"User-Agent": DESKTOP_USER_AGENT})
+        session.headers.update({"User-Agent": user_agent})
         return session
 
     @cached_property
@@ -224,6 +225,11 @@ class HHApplicantTool(MegaTool):
         session = self._create_http_session(
             self._get_proxies(),
             log_label="requests",
+            user_agent=(
+                getattr(self, "user_agent", None)
+                or self.config.get("user_agent")
+                or DESKTOP_USER_AGENT
+            ),
         )
 
         session.cookies = HHOnlyCookieJar(str(self.cookies_file))
@@ -371,6 +377,10 @@ class HHApplicantTool(MegaTool):
     def parse_redirect_config(
         self, response: requests.Response, check_auth: bool = True
     ) -> dict[str, Any]:
+        if response.status_code in (401, 403):
+            raise Error(
+                "Аккаунт заблокирован либо требуется повторная авторизация."
+            )
         if response.status_code != 200:
             raise Error(
                 f"Неожиданный код ответа: {response.status_code} {response.url}"

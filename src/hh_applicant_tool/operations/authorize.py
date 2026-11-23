@@ -73,6 +73,13 @@ class Operation(BaseOperation):
     def selector_timeout(self) -> int | None:
         return None if self.is_headless else 5000
 
+    def browser_context_options(self, device: dict[str, typing.Any]) -> dict[str, typing.Any]:
+        options = dict(device)
+        user_agent = self._tool.config.get("webview_user_agent")
+        if user_agent:
+            options["user_agent"] = user_agent
+        return options
+
     def setup_parser(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("username", nargs="?", help="Email или телефон")
         parser.add_argument("--password", "-p", help="Пароль для входа")
@@ -160,7 +167,9 @@ class Operation(BaseOperation):
 
             try:
                 android_device = pw.devices["Galaxy A55"]
-                context = await browser.new_context(**android_device)
+                context = await browser.new_context(
+                    **self.browser_context_options(android_device)
+                )
                 page = await context.new_page()
 
                 code_future: asyncio.Future[str | None] = asyncio.Future()

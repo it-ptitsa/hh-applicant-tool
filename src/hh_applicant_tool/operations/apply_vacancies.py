@@ -152,6 +152,7 @@ class Namespace(BaseNamespace):
     order_by: str
     search: str
     schedule: str
+    work_format: list[str] | None
     dry_run: bool
     # Пошли доп фильтры, которых не было
     experience: str
@@ -231,6 +232,8 @@ class Operation(BaseOperation):
             "-f",
             "--force-message",
             "--force",
+            "--force-cover-letter",
+            "--force-letter",
             help="Всегда отправлять сообщение при отклике",
             action=argparse.BooleanOptionalAction,
         )
@@ -398,6 +401,12 @@ class Operation(BaseOperation):
             type=str,
         )
         api_search_filters.add_argument(
+            "--work-format",
+            nargs="+",
+            choices=["REMOTE", "HYBRID", "ON_SITE", "FIELD_WORK"],
+            help="Формат работы",
+        )
+        api_search_filters.add_argument(
             "--employment", nargs="+", help="Тип занятости"
         )
         api_search_filters.add_argument(
@@ -533,6 +542,7 @@ class Operation(BaseOperation):
         self.right_lng = args.right_lng
         self.salary = args.salary
         self.schedule = args.schedule
+        self.work_format = args.work_format
         self.search = args.search
         self.search_field = args.search_field
         self.reapply_rejected = args.reapply_rejected
@@ -2316,6 +2326,8 @@ class Operation(BaseOperation):
             params["text"] = text
         if self.schedule:
             params["schedule"] = self.schedule
+        if self.work_format:
+            params["work_format"] = list(self.work_format)
         if self.experience:
             params["experience"] = self.experience
         if self.currency:

@@ -44,6 +44,7 @@ class ChatToReply:
     salary: str
     skills: str
     is_discard: bool = False
+    is_bump: bool = False
 
 
 class Namespace(BaseNamespace):
@@ -51,6 +52,7 @@ class Namespace(BaseNamespace):
     interval: int
     max_pages: int
     resume_id: str
+    bump: bool
 
 
 class Operation(BaseOperation):
@@ -76,6 +78,11 @@ class Operation(BaseOperation):
             default=10,
             help="Максимальное количество страниц чатов за одну проверку",
         )
+        parser.add_argument(
+            "--bump",
+            action="store_true",
+            help="Напоминать о себе в чатах без ответа спустя 2 дня (не старше 30 дней)",
+        )
         # parser.add_argument(
         #     "--resume-id",
         #     help="Резюме с которого отвечаем. По умолчанию: первое активное в списке",
@@ -83,6 +90,7 @@ class Operation(BaseOperation):
 
     def run(self, tool: HHApplicantTool, args: Namespace) -> None:
         self.tool = tool
+        self.bump_enabled = args.bump
         cancel_event = getattr(args, "_cancel_event", Event())
         logger.info("Автоответчик запущен")
 
@@ -247,6 +255,7 @@ class Operation(BaseOperation):
             logger.warning("Не найдено ни одного резюме")
             return []
 
+        result: list[ChatToReply] = []
         for resume_id, resume in resumes.items():
             resume_hash = resume.get("hash", "")
             resume_title = resume.get("title", "")
@@ -260,8 +269,6 @@ class Operation(BaseOperation):
             skills = self.format_skills(
                 resume.get("skills"),
             )
-
-            result: list[ChatToReply] = []
 
             for page in range(max_pages):
                 data = self.get_chats(page)
@@ -391,7 +398,8 @@ class Operation(BaseOperation):
             return None
 
         created_at = self.parse_datetime(
-            last_message.get("createdAt")
+            last_message.get("creationTime")
+            or last_message.get("createdAt")
             or last_message.get("created_at")
             or last_message.get("created"),
         )
@@ -399,10 +407,30 @@ class Operation(BaseOperation):
         if created_at is None:
             return None
 
-        if datetime.now(timezone.utc) - created_at > timedelta(hours=72):
+        age = datetime.now(timezone.utc) - created_at
+
+        current_participant = item.get("currentParticipantId")
+        last_participant = last_message.get("participantId")
+        last_is_mine = (
+            current_participant is not None
+            and last_participant is not None
+            and str(current_participant) == str(last_participant)
+        )
+        is_bump = last_is_mine and getattr(self, "bump_enabled", False)
+        if is_bump and not timedelta(days=2) <= age <= timedelta(days=30):
+            return None
+        if last_is_mine and not is_bump:
+            return None
+        if not last_is_mine and age > timedelta(hours=72):
             return None
 
         participant = last_message.get("participantDisplay") or {}
+        workflow_transition = last_message.get("workflowTransition") or {}
+        is_discard = workflow_transition.get("applicantState") == "DISCARD"
+        if not is_discard and not is_bump and not participant.get("isBot") and (
+            age < timedelta(minutes=15)
+        ):
+            return None
 
         contact_name = (
             participant.get("name")
@@ -414,11 +442,13 @@ class Operation(BaseOperation):
             last_message.get("text") or last_message.get("message") or ""
         ).strip()
 
-        workflow_transition = last_message.get("workflowTransition") or {}
-
-        is_discard = workflow_transition.get("applicantState") == "DISCARD"
-
         item_resources = item.get("resources") or {}
+        resume_refs = item_resources.get("RESUME")
+        if resume_refs:
+            refs = resume_refs if isinstance(resume_refs, list) else [resume_refs]
+            if str(resume_id) not in {str(ref) for ref in refs}:
+                return None
+
         # Объекты вакансии и резюме hh отдаёт двумя способами: либо
         # картой прямо в resources элемента чата, либо списком id
         # вида {"VACANCY": ["123"]}, а сами объекты кладутся в
@@ -492,6 +522,7 @@ class Operation(BaseOperation):
             salary=salary,
             skills=skills,
             is_discard=is_discard,
+            is_bump=is_bump,
         )
 
     def is_chat_awaiting_reply(self, chat: ChatToReply) -> bool:
@@ -580,6 +611,16 @@ class Operation(BaseOperation):
     ) -> str:
         conversation = self.format_messages(messages)
 
+        if chat.is_bump:
+            return f"""Вакансия: {chat.vacancy_name}
+Компания: {chat.company_name}
+История переписки:
+{conversation}
+
+Напиши короткое вежливое напоминание о себе (1–2 предложения).
+Уточни, актуальна ли вакансия и сохраняется ли интерес к моей кандидатуре.
+Не повторяй прошлые сообщения дословно. Верни только текст сообщения."""
+
         prompt = f"""Вакансия: {chat.vacancy_name}
 Компания: {chat.company_name}
 Зарплата в вакансии: {chat.vacancy_compensation}
@@ -639,7 +680,8 @@ class Operation(BaseOperation):
                 continue
 
             created_at = self.parse_datetime(
-                message.get("createdAt")
+                message.get("creationTime")
+                or message.get("createdAt")
                 or message.get("created_at")
                 or message.get("created"),
             )
