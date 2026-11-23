@@ -45,3 +45,11 @@ def test_work_format_filter_reaches_vacancy_api():
         server.shutdown()
         thread.join(timeout=3)
         server.server_close()
+
+
+def test_upstream_force_letter_alias_preserves_fork_behavior():
+    operation = Operation()
+    parser = argparse.ArgumentParser()
+    operation.setup_parser(parser)
+    assert parser.parse_args(["--force-cover-letter"]).force_message is True
+    assert parser.parse_args(["--no-force-cover-letter"]).force_message is False

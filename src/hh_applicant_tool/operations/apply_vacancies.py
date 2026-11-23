@@ -232,6 +232,8 @@ class Operation(BaseOperation):
             "-f",
             "--force-message",
             "--force",
+            "--force-cover-letter",
+            "--force-letter",
             help="Всегда отправлять сообщение при отклике",
             action=argparse.BooleanOptionalAction,
         )
