@@ -359,6 +359,59 @@ class TestGetChatsAwaitingReply:
             thread.join(timeout=3)
             server.server_close()
 
+    def test_chat_api_bump_uses_real_response_shape(self):
+        own = _message("Жду ответа")
+        own["creationTime"] = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+        own.pop("createdAt")
+        own["participantId"] = "my-id"
+        payload = {
+            "chats": {
+                "items": [{
+                    "id": 9,
+                    "currentParticipantId": "my-id",
+                    "lastMessage": own,
+                    "resources": {"VACANCY": ["555"], "RESUME": ["777"]},
+                }],
+                "pages": 1,
+            },
+            "resources": {
+                "vacancies": {"555": _vacancy()},
+                "resumes": {"777": _resume()},
+            },
+        }
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(payload).encode())
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            op = Operation()
+            op.bump_enabled = True
+            op.chat_url = f"http://127.0.0.1:{server.server_port}"
+            op.tool = SimpleNamespace(
+                session=requests.Session(),
+                xsrf_token="test-token",
+                get_resumes=lambda: [
+                    {"id": 777, "status": {"id": "published"}, "title": "Python"}
+                ],
+            )
+            chats = op.get_chats_awaiting_reply(max_pages=1)
+            assert len(chats) == 1
+            assert chats[0].chat_id == 9 and chats[0].is_bump
+        finally:
+            server.shutdown()
+            thread.join(timeout=3)
+            server.server_close()
+
     def test_skipped_chats_do_not_break_the_loop(self):
         """parse_chat_item возвращает None — цикл это переживает.
 
@@ -413,3 +466,37 @@ def test_chat_history_formats_upstream_creation_time():
     ])
     assert "2026-11-23" in history
     assert "Работодатель: Здравствуйте" in history
+
+
+def test_old_own_message_can_be_bumped_only_when_enabled():
+    message = _message("Жду вашего ответа")
+    message["participantId"] = "my-id"
+    message["createdAt"] = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+    item = {
+        "id": 1,
+        "currentParticipantId": "my-id",
+        "lastMessage": message,
+        "resources": {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}},
+    }
+    operation = Operation()
+    assert _parse(operation, item) is None
+    operation.bump_enabled = True
+    chat = _parse(operation, item)
+    assert chat is not None and chat.is_bump
+    assert "напоминание" in operation.build_user_prompt(chat, []).lower()
+
+
+def test_bump_skips_recent_and_very_old_chats():
+    operation = Operation()
+    operation.bump_enabled = True
+    for days in (1, 31):
+        message = _message("Жду вашего ответа")
+        message["participantId"] = "my-id"
+        message["createdAt"] = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        item = {
+            "id": 1,
+            "currentParticipantId": "my-id",
+            "lastMessage": message,
+            "resources": {"vacancies": {"555": _vacancy()}, "resumes": {"777": _resume()}},
+        }
+        assert _parse(operation, item) is None

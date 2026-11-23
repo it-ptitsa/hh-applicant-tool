@@ -44,6 +44,7 @@ class ChatToReply:
     salary: str
     skills: str
     is_discard: bool = False
+    is_bump: bool = False
 
 
 class Namespace(BaseNamespace):
@@ -51,6 +52,7 @@ class Namespace(BaseNamespace):
     interval: int
     max_pages: int
     resume_id: str
+    bump: bool
 
 
 class Operation(BaseOperation):
@@ -76,6 +78,11 @@ class Operation(BaseOperation):
             default=10,
             help="Максимальное количество страниц чатов за одну проверку",
         )
+        parser.add_argument(
+            "--bump",
+            action="store_true",
+            help="Напоминать о себе в чатах без ответа спустя 2 дня (не старше 30 дней)",
+        )
         # parser.add_argument(
         #     "--resume-id",
         #     help="Резюме с которого отвечаем. По умолчанию: первое активное в списке",
@@ -83,6 +90,7 @@ class Operation(BaseOperation):
 
     def run(self, tool: HHApplicantTool, args: Namespace) -> None:
         self.tool = tool
+        self.bump_enabled = args.bump
         cancel_event = getattr(args, "_cancel_event", Event())
         logger.info("Автоответчик запущен")
 
@@ -399,23 +407,28 @@ class Operation(BaseOperation):
         if created_at is None:
             return None
 
-        if datetime.now(timezone.utc) - created_at > timedelta(hours=72):
-            return None
+        age = datetime.now(timezone.utc) - created_at
 
         current_participant = item.get("currentParticipantId")
         last_participant = last_message.get("participantId")
-        if (
+        last_is_mine = (
             current_participant is not None
             and last_participant is not None
             and str(current_participant) == str(last_participant)
-        ):
+        )
+        is_bump = last_is_mine and getattr(self, "bump_enabled", False)
+        if is_bump and not timedelta(days=2) <= age <= timedelta(days=30):
+            return None
+        if last_is_mine and not is_bump:
+            return None
+        if not last_is_mine and age > timedelta(hours=72):
             return None
 
         participant = last_message.get("participantDisplay") or {}
         workflow_transition = last_message.get("workflowTransition") or {}
         is_discard = workflow_transition.get("applicantState") == "DISCARD"
-        if not is_discard and not participant.get("isBot") and (
-            datetime.now(timezone.utc) - created_at < timedelta(minutes=15)
+        if not is_discard and not is_bump and not participant.get("isBot") and (
+            age < timedelta(minutes=15)
         ):
             return None
 
@@ -509,6 +522,7 @@ class Operation(BaseOperation):
             salary=salary,
             skills=skills,
             is_discard=is_discard,
+            is_bump=is_bump,
         )
 
     def is_chat_awaiting_reply(self, chat: ChatToReply) -> bool:
@@ -596,6 +610,16 @@ class Operation(BaseOperation):
         messages: list[str],
     ) -> str:
         conversation = self.format_messages(messages)
+
+        if chat.is_bump:
+            return f"""Вакансия: {chat.vacancy_name}
+Компания: {chat.company_name}
+История переписки:
+{conversation}
+
+Напиши короткое вежливое напоминание о себе (1–2 предложения).
+Уточни, актуальна ли вакансия и сохраняется ли интерес к моей кандидатуре.
+Не повторяй прошлые сообщения дословно. Верни только текст сообщения."""
 
         prompt = f"""Вакансия: {chat.vacancy_name}
 Компания: {chat.company_name}
