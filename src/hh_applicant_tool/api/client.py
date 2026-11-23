@@ -237,6 +237,9 @@ class ApiClient(BaseClient):
     client_id: str | None = None
     client_secret: str | None = None
     base_url: str = HH_API_URL
+    _refresh_lock: Lock = dataclasses.field(
+        default_factory=Lock, init=False, compare=False, repr=False
+    )
 
     @property
     def is_access_expired(self) -> bool:
@@ -271,6 +274,8 @@ class ApiClient(BaseClient):
         as_json: bool = False,
         **kwargs: Any,
     ) -> T:
+        token_used = self.access_token
+
         def do_request():
             return BaseClient.request(
                 self, method, endpoint, params, delay, as_json, **kwargs
@@ -279,13 +284,22 @@ class ApiClient(BaseClient):
         try:
             return do_request()
         # TODO: добавить класс для ошибок типа AccessTokenExpired
-        except errors.Forbidden as ex:
+        except errors.Forbidden:
+            # Пока запрос получал 403, другой поток мог уже обновить токен.
+            if self.access_token != token_used:
+                return do_request()
             if not self.is_access_expired or not self.refresh_token:
-                raise ex
-            logger.info("try to refresh access_token")
-            # Пробуем обновить токен
-            self.refresh_access_token()
-            # И повторно отправляем запрос
+                raise
+            with self._refresh_lock:
+                if self.access_token == token_used:
+                    logger.info("try to refresh access_token")
+                    try:
+                        self.refresh_access_token()
+                    except (errors.BadRequest, errors.Forbidden):
+                        self.access_token = None
+                        self.refresh_token = None
+                        self.access_expires_at = 0
+                        raise
             return do_request()
 
     def handle_access_token(self, token: AccessToken) -> None:
